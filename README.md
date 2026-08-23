@@ -241,12 +241,6 @@ here only nominatively, to describe compatibility.
   risk. DWService's terms permit personal use of the service but restrict copying/
   redistributing *their* Application — which this project does not do.
 - **License.** `dwshell`'s own source is released under the [MIT License](LICENSE).
-  The copyright holder in `LICENSE` is a placeholder — set it to the actual author/
-  owner before publishing.
-
-This section is informational, not legal advice. If you need certainty for your
-situation, consult a lawyer or request written authorization/clarification from
-DWService.
 
 > Note for contributors: never commit DWService's client/agent source or assets.
 > A local `/.reverse-engineering/` scratch directory (if you recreate one) is
