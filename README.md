@@ -117,9 +117,6 @@ dwshell shell version      # connect to the host named "version"
 dwshell shell list -c "id" # run a command on the host named "list"
 ```
 
-There is intentionally no `connect` alias, to keep that name free for future
-functionality.
-
 `<host>` is a machine **name** or **id**, optionally prefixed `user@` (SSH-style;
 defaults to your local username). If a name is ambiguous (a name shared between an
 owned agent and a share, or duplicate share names), pass the id or add `--own` /
