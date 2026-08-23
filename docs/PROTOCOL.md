@@ -145,8 +145,9 @@ a step named after the method:
 - **Email:** first `step="email"`, `password="<tempKey>:EMAIL"` to make the server
   send the code (the response carries a new `tempKey`); then `step="email"`,
   `password="<tempKey>:<code>"`.
-- **Device:** approve-on-device (the client polls with `password="<tempKey>"`);
-  not implemented by dwshell.
+- **Device:** approve-on-device — the client polls with `password="<tempKey>"`
+  (no code) every ~2s while the status stays `device`/`wait`, until the user
+  approves on a trusted device and it becomes `ok`.
 
 The 2FA step also carries a fresh `sessionKey` (and `trustedDevice` if
 registering); the key from the step that finally returns `status:"ok"` becomes

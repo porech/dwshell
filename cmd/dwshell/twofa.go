@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base32"
@@ -14,6 +15,9 @@ import (
 
 	"github.com/porech/dwshell/internal/auth"
 )
+
+// stdinReader is shared so retries don't drop buffered input.
+var stdinReader = bufio.NewReader(os.Stdin)
 
 // twoFactorProvider returns a callback that supplies a second-factor code.
 //
@@ -40,23 +44,34 @@ func twoFactorProvider() auth.TwoFactorFunc {
 				}
 			}
 			return promptCode("Enter the code sent to your email: ", retry)
+		case "device":
+			// No code: the auth layer polls until you approve on your device.
+			fmt.Fprintln(os.Stderr, "Waiting for approval on your trusted device…")
+			return "", nil
 		default:
 			return promptCode(fmt.Sprintf("Two-factor code (%s): ", method), retry)
 		}
 	}
 }
 
+// promptCode reads a code from stdin — a TTY prompt interactively, or a line
+// from a pipe/FIFO for scripted use.
 func promptCode(label string, retry bool) (string, error) {
-	if !xterm.IsTerminal(int(os.Stdin.Fd())) {
-		return "", fmt.Errorf("two-factor code required but no TTY; set DWSHELL_TOTP_SECRET or DWSHELL_TOTP_CODE (TOTP), or DWSHELL_2FA_CODE (email)")
+	tty := xterm.IsTerminal(int(os.Stdin.Fd()))
+	if tty {
+		if retry {
+			fmt.Fprintln(os.Stderr, "Invalid code, try again.")
+		}
+		fmt.Fprint(os.Stderr, label)
 	}
-	if retry {
-		fmt.Fprintln(os.Stderr, "Invalid code, try again.")
+	line, err := stdinReader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		if err != nil {
+			return "", fmt.Errorf("two-factor code required; provide it on stdin, or via DWSHELL_TOTP_SECRET/DWSHELL_TOTP_CODE (TOTP) or DWSHELL_2FA_CODE (email)")
+		}
 	}
-	fmt.Fprint(os.Stderr, label)
-	var code string
-	fmt.Scanln(&code)
-	return strings.TrimSpace(code), nil
+	return line, nil
 }
 
 // totpCode computes the current RFC 6238 TOTP (SHA-1, 6 digits, 30s step) for a

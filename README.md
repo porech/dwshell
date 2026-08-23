@@ -115,9 +115,10 @@ and **never prompt** for the account password. When the session expires they
 refresh silently via the trusted device, or, if there is none, tell you to run
 `dwshell login` again. Leave an interactive shell with `exit` (or Ctrl-D).
 
-If your account has **two-factor authentication**, `login` prompts for the code
-(TOTP, or the code emailed to you). A registered trusted device refreshes the
-session without re-entering it. To supply the code non-interactively, see
+If your account has **two-factor authentication**, `login` handles it: it prompts
+for the code (TOTP, or the code emailed to you), or waits while you approve the
+sign-in on a trusted device (device 2FA). A registered trusted device refreshes
+the session without any of this. To supply a code non-interactively, see
 [Environment variables](#environment-variables).
 
 ### Commands

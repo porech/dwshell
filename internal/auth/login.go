@@ -8,7 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
+
+// deviceApprovalTimeout bounds how long we wait for a device-approval login.
+var deviceApprovalTimeout = 2 * time.Minute
 
 // Bootstrap is the result of a successful login: everything needed to open the
 // account command channel. The raw "ok" response is preserved because the exact
@@ -152,7 +156,11 @@ func LoginPassword(ctx context.Context, client *http.Client, cfg *LoginConfig, u
 			}
 			// loop again to inspect the new status
 		case "device":
-			return nil, fmt.Errorf("this account uses device-approval two-factor authentication, which dwshell does not support; use TOTP or email 2FA, or a trusted device")
+			resp, signKey, trustedKey, err = handleDeviceApproval(ctx, client, cfg, user, resp, trusted, twoFA)
+			if err != nil {
+				return nil, err
+			}
+			// loop again to inspect the new status
 		default:
 			return nil, fmt.Errorf("login did not return ok (status=%q)", status)
 		}
@@ -208,6 +216,44 @@ func handleTwoFactor(ctx context.Context, client *http.Client, cfg *LoginConfig,
 		}
 	}
 	return nil, nil, nil, fmt.Errorf("two-factor authentication failed after %d attempts", maxAttempts)
+}
+
+// handleDeviceApproval polls the server while the user approves the login on a
+// trusted device. No code is entered; the status flips from "device"/"wait" to
+// "ok" once approved. twoFA (if set) is called once with method "device" so the
+// UI can tell the user to approve.
+func handleDeviceApproval(ctx context.Context, client *http.Client, cfg *LoginConfig, user string, prev map[string]any, trusted *TrustedDeviceRequest, twoFA TwoFactorFunc) (map[string]any, *SignKey, *SignKey, error) {
+	if twoFA != nil {
+		_, _ = twoFA("device", false) // notification only; any returned value is ignored
+	}
+	tempKey := stringOr(prev["tempKey"], "")
+	deadline := time.Now().Add(deviceApprovalTimeout)
+
+	for {
+		resp, signKey, trustedKey, err := credentialStep(ctx, client, cfg, user, "device", tempKey, trusted)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		switch stringOr(resp["status"], "") {
+		case "ok":
+			return resp, signKey, trustedKey, nil
+		case "wait", "device":
+			if tk := stringOr(resp["tempKey"], ""); tk != "" {
+				tempKey = tk
+			}
+			if time.Now().After(deadline) {
+				return nil, nil, nil, fmt.Errorf("device approval timed out")
+			}
+			select {
+			case <-ctx.Done():
+				return nil, nil, nil, ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		default:
+			// Unexpected status: return it for the caller to inspect.
+			return resp, signKey, trustedKey, nil
+		}
+	}
 }
 
 // finishLogin builds the Bootstrap and records a registered trusted device.
