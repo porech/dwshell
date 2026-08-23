@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -232,6 +233,12 @@ func handleDeviceApproval(ctx context.Context, client *http.Client, cfg *LoginCo
 	for {
 		resp, signKey, trustedKey, err := credentialStep(ctx, client, cfg, user, "device", tempKey, trusted)
 		if err != nil {
+			// Rejecting on the device (or a server-side timeout) ends the login
+			// session, which comes back as an auth error (e.g. #SessionExpired).
+			var ae *authError
+			if errors.As(err, &ae) {
+				return nil, nil, nil, fmt.Errorf("device login was not approved (rejected or expired)")
+			}
 			return nil, nil, nil, err
 		}
 		switch stringOr(resp["status"], "") {
