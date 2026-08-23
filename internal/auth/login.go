@@ -12,8 +12,9 @@ import (
 	"time"
 )
 
-// deviceApprovalTimeout bounds how long we wait for a device-approval login.
-var deviceApprovalTimeout = 2 * time.Minute
+// deviceApprovalPoll is how often we re-check a pending device-approval login,
+// matching the official client's 2s interval.
+const deviceApprovalPoll = 2 * time.Second
 
 // Bootstrap is the result of a successful login: everything needed to open the
 // account command channel. The raw "ok" response is preserved because the exact
@@ -228,8 +229,11 @@ func handleDeviceApproval(ctx context.Context, client *http.Client, cfg *LoginCo
 		_, _ = twoFA("device", false) // notification only; any returned value is ignored
 	}
 	tempKey := stringOr(prev["tempKey"], "")
-	deadline := time.Now().Add(deviceApprovalTimeout)
 
+	// Poll until the user approves (status "ok"), rejects/expires (the server
+	// ends the session with an auth error), or the caller cancels (Ctrl-C via
+	// ctx). This matches the official client, which waits indefinitely with no
+	// fixed client-side timeout.
 	for {
 		resp, signKey, trustedKey, err := credentialStep(ctx, client, cfg, user, "device", tempKey, trusted)
 		if err != nil {
@@ -248,13 +252,10 @@ func handleDeviceApproval(ctx context.Context, client *http.Client, cfg *LoginCo
 			if tk := stringOr(resp["tempKey"], ""); tk != "" {
 				tempKey = tk
 			}
-			if time.Now().After(deadline) {
-				return nil, nil, nil, fmt.Errorf("device approval timed out")
-			}
 			select {
 			case <-ctx.Done():
 				return nil, nil, nil, ctx.Err()
-			case <-time.After(2 * time.Second):
+			case <-time.After(deviceApprovalPoll):
 			}
 		default:
 			// Unexpected status: return it for the caller to inspect.
