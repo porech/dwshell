@@ -51,10 +51,11 @@ func New(configPath string) (*Client, error) {
 // Config exposes the underlying config (e.g. for the user name).
 func (c *Client) Config() *config.Config { return c.cfg }
 
-// Login authenticates with a password and persists the session. Unless
+// Login authenticates with a password and persists the session. It handles a
+// second factor (TOTP or email) via twoFA when the server requests one. Unless
 // registerTrusted is false, it also registers and stores one trusted device so
 // future sessions can refresh without a password.
-func (c *Client) Login(ctx context.Context, user, password string, registerTrusted bool) error {
+func (c *Client) Login(ctx context.Context, user, password string, registerTrusted bool, twoFA auth.TwoFactorFunc) error {
 	// Start from a clean jar so a stale session cookie is not mixed with the new
 	// login's cookies (which would send two DWSID values and break reuse).
 	if jar, err := cookiejar.New(nil); err == nil {
@@ -69,7 +70,7 @@ func (c *Client) Login(ctx context.Context, user, password string, registerTrust
 	if registerTrusted {
 		tdReq = auth.NewTrustedDeviceRequest("dwshell")
 	}
-	boot, err := auth.LoginPassword(ctx, c.http, cfg, user, password, tdReq)
+	boot, err := auth.LoginPassword(ctx, c.http, cfg, user, password, tdReq, twoFA)
 	if err != nil {
 		return err
 	}

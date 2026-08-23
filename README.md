@@ -115,6 +115,11 @@ and **never prompt** for the account password. When the session expires they
 refresh silently via the trusted device, or, if there is none, tell you to run
 `dwshell login` again. Leave an interactive shell with `exit` (or Ctrl-D).
 
+If your account has **two-factor authentication**, `login` prompts for the code
+(TOTP, or the code emailed to you). A registered trusted device refreshes the
+session without re-entering it. To supply the code non-interactively, see
+[Environment variables](#environment-variables).
+
 ### Commands
 
 | Command | Description |
@@ -175,6 +180,9 @@ DWSHELL_REMOTE_PASSWORD=… dwshell alice@myhost -c "id"
 ### Environment variables
 
 - `DWSHELL_PASSWORD` — account password for `login` (avoids the prompt).
+- `DWSHELL_TOTP_SECRET` — TOTP secret; `login` generates the 2FA code from it
+  automatically (handy for automation). Alternatively `DWSHELL_TOTP_CODE` for a
+  ready code, or `DWSHELL_2FA_CODE` for an emailed code.
 - `DWSHELL_REMOTE_PASSWORD` — remote OS password when the agent requires shell
   authentication (used by `-c`, and by interactive before the first prompt).
 - `DWSHELL_CONFIG` — override the config file path.

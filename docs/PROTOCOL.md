@@ -135,6 +135,25 @@ Response:
 
 Other possible `status`: `totp` / `email` / `device` (2FA), `captcha`.
 
+### Two-factor step (`totp` / `email`)
+
+When 2FA is enabled, the **password** step returns `status: "totp"`, `"email"`,
+or `"device"` (plus a fresh `tempKey`) instead of `"ok"`. The client then submits
+a step named after the method:
+
+- **TOTP:** `step="totp"`, `password="<tempKey>:<6-digit code>"`.
+- **Email:** first `step="email"`, `password="<tempKey>:EMAIL"` to make the server
+  send the code (the response carries a new `tempKey`); then `step="email"`,
+  `password="<tempKey>:<code>"`.
+- **Device:** approve-on-device (the client polls with `password="<tempKey>"`);
+  not implemented by dwshell.
+
+The 2FA step also carries a fresh `sessionKey` (and `trustedDevice` if
+registering); the key from the step that finally returns `status:"ok"` becomes
+the session's signing key. A wrong/expired code comes back as the same 2FA
+`status` (with a message) and a refreshed `tempKey`, so the client can retry.
+A registered trusted device logs in passwordlessly (§6) and skips 2FA entirely.
+
 ### Step `password`
 
 Encrypted payload:

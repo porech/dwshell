@@ -23,6 +23,10 @@ type Bootstrap struct {
 	TrustedDeviceName string
 }
 
+// TwoFactorFunc supplies a second-factor code on demand. method is the server's
+// requested factor ("totp" or "email"); retry is true after a rejected code.
+type TwoFactorFunc func(method string, retry bool) (string, error)
+
 // authError carries a server "error" status message (e.g. #PASSWORDRESET).
 type authError struct{ msg string }
 
@@ -68,77 +72,160 @@ func postAuth(ctx context.Context, client *http.Client, cfg *LoginConfig, typ, s
 	return out, nil
 }
 
-// LoginPassword performs the user+password login steps. On success it returns a
-// Bootstrap. If trusted is non-nil, a trusted device is registered and its
-// credentials are returned in the Bootstrap and via trusted (for persistence).
-func LoginPassword(ctx context.Context, client *http.Client, cfg *LoginConfig, user, password string, trusted *TrustedDeviceRequest) (*Bootstrap, error) {
-	// Step user.
-	tok, scfVal, err := encryptToken(map[string]any{
-		"type": "login", "step": "user", "username": user,
-	}, cfg.ServerKeyB64)
+// encryptAndPost encrypts a payload and posts it as one login step.
+func encryptAndPost(ctx context.Context, client *http.Client, cfg *LoginConfig, typ, step string, payload map[string]any) (map[string]any, error) {
+	tok, scfVal, err := encryptToken(payload, cfg.ServerKeyB64)
 	if err != nil {
 		return nil, err
 	}
-	uresp, err := postAuth(ctx, client, cfg, "login", "user", tok, scfVal, nil)
+	return postAuth(ctx, client, cfg, typ, step, tok, scfVal, nil)
+}
+
+// credentialStep sends a credential-bearing login step (password or a 2FA code)
+// with a fresh session signing key (and a trusted-device registration when
+// requested). It returns the response plus the signing key and trusted authKey
+// generated for this step, so the caller can adopt them if the step succeeds.
+func credentialStep(ctx context.Context, client *http.Client, cfg *LoginConfig, user, step, credential string, trusted *TrustedDeviceRequest) (resp map[string]any, signKey, trustedKey *SignKey, err error) {
+	signKey, err = NewSignKey()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	sessionKey, err := signKey.sessionKeyForLogin()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	payload := map[string]any{
+		"type":       "login",
+		"step":       step,
+		"username":   user,
+		"password":   credential,
+		"sessionKey": sessionKey,
+	}
+	if trusted != nil {
+		tk, td, err := trusted.build()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		trustedKey = tk
+		payload["trustedDevice"] = td
+	}
+	resp, err = encryptAndPost(ctx, client, cfg, "login", step, payload)
+	return resp, signKey, trustedKey, err
+}
+
+// LoginPassword performs the user+password login, transparently handling a
+// second factor (TOTP or email) via twoFA when the server requests one. On
+// success it returns a Bootstrap; if trusted is non-nil a trusted device is
+// registered on the successful step and returned via trusted for persistence.
+func LoginPassword(ctx context.Context, client *http.Client, cfg *LoginConfig, user, password string, trusted *TrustedDeviceRequest, twoFA TwoFactorFunc) (*Bootstrap, error) {
+	// Step user.
+	uresp, err := encryptAndPost(ctx, client, cfg, "login", "user", map[string]any{
+		"type": "login", "step": "user", "username": user,
+	})
 	if err != nil {
 		return nil, err
+	}
+	if s, _ := uresp["status"].(string); s != "password" {
+		return nil, fmt.Errorf("unexpected status after user step: %q", s)
 	}
 	tempKey, _ := uresp["tempKey"].(string)
-	status, _ := uresp["status"].(string)
-	if status != "password" {
-		return nil, fmt.Errorf("unexpected status after user step: %q", status)
-	}
 	if tempKey == "" {
 		return nil, fmt.Errorf("no tempKey returned")
 	}
 
 	// Step password.
-	signKey, err := NewSignKey()
+	resp, signKey, trustedKey, err := credentialStep(ctx, client, cfg, user, "password", tempKey+":"+password, trusted)
 	if err != nil {
 		return nil, err
-	}
-	sessionKey, err := signKey.sessionKeyForLogin()
-	if err != nil {
-		return nil, err
-	}
-	payload := map[string]any{
-		"type": "login", "step": "password",
-		"username":   user,
-		"password":   tempKey + ":" + password,
-		"sessionKey": sessionKey,
-	}
-	var trustedKey *SignKey
-	if trusted != nil {
-		tk, td, err := trusted.build()
-		if err != nil {
-			return nil, err
-		}
-		trustedKey = tk
-		payload["trustedDevice"] = td
-	}
-	tok, scfVal, err = encryptToken(payload, cfg.ServerKeyB64)
-	if err != nil {
-		return nil, err
-	}
-	presp, err := postAuth(ctx, client, cfg, "login", "password", tok, scfVal, nil)
-	if err != nil {
-		return nil, err
-	}
-	if s, _ := presp["status"].(string); s != "ok" {
-		return nil, fmt.Errorf("login did not return ok (status=%q): %v", s, presp)
 	}
 
-	b := &Bootstrap{Raw: presp, SignKey: signKey}
-	if id, ok := presp["trustedDeviceID"].(string); ok {
-		b.TrustedDeviceID = id
-		b.TrustedDeviceName, _ = presp["trustedDeviceUserName"].(string)
-		if trusted != nil && trustedKey != nil {
-			trusted.Result = &TrustedDevice{
-				ID:      id,
-				Name:    trusted.Name,
-				AuthKey: trustedKey,
+	// Resolve status, running a 2FA exchange if required.
+	for {
+		status, _ := resp["status"].(string)
+		switch status {
+		case "ok":
+			return finishLogin(resp, signKey, trusted, trustedKey), nil
+		case "totp", "email":
+			resp, signKey, trustedKey, err = handleTwoFactor(ctx, client, cfg, user, status, resp, trusted, twoFA)
+			if err != nil {
+				return nil, err
 			}
+			// loop again to inspect the new status
+		case "device":
+			return nil, fmt.Errorf("this account uses device-approval two-factor authentication, which dwshell does not support; use TOTP or email 2FA, or a trusted device")
+		default:
+			return nil, fmt.Errorf("login did not return ok (status=%q)", status)
 		}
 	}
-	return b, nil
+}
+
+// handleTwoFactor performs the second-factor exchange for the given method and
+// returns the resulting (hopefully "ok") response.
+func handleTwoFactor(ctx context.Context, client *http.Client, cfg *LoginConfig, user, method string, prev map[string]any, trusted *TrustedDeviceRequest, twoFA TwoFactorFunc) (map[string]any, *SignKey, *SignKey, error) {
+	if twoFA == nil {
+		return nil, nil, nil, fmt.Errorf("two-factor authentication (%s) required but no code provider is configured", method)
+	}
+	tempKey := stringOr(prev["tempKey"], "")
+
+	// For email, ask the server to send the code first.
+	if method == "email" {
+		eresp, err := encryptAndPost(ctx, client, cfg, "login", "email", map[string]any{
+			"type": "login", "step": "email", "username": user, "password": tempKey + ":EMAIL",
+		})
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if tk := stringOr(eresp["tempKey"], ""); tk != "" {
+			tempKey = tk
+		}
+	}
+
+	const maxAttempts = 3
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		code, err := twoFA(method, attempt > 0)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		code = strings.TrimSpace(code)
+		resp, signKey, trustedKey, err := credentialStep(ctx, client, cfg, user, method, tempKey+":"+code, trusted)
+		if err != nil {
+			// A rejected code comes back as status==method (not an error status),
+			// so a real error here is terminal.
+			return nil, nil, nil, err
+		}
+		switch stringOr(resp["status"], "") {
+		case "ok":
+			return resp, signKey, trustedKey, nil
+		case method:
+			// Wrong/expired code: refresh tempKey if provided and retry.
+			if tk := stringOr(resp["tempKey"], ""); tk != "" {
+				tempKey = tk
+			}
+			continue
+		default:
+			// Any other status (e.g. another factor) is returned to the caller.
+			return resp, signKey, trustedKey, nil
+		}
+	}
+	return nil, nil, nil, fmt.Errorf("two-factor authentication failed after %d attempts", maxAttempts)
+}
+
+// finishLogin builds the Bootstrap and records a registered trusted device.
+func finishLogin(resp map[string]any, signKey *SignKey, trusted *TrustedDeviceRequest, trustedKey *SignKey) *Bootstrap {
+	b := &Bootstrap{Raw: resp, SignKey: signKey}
+	if id, ok := resp["trustedDeviceID"].(string); ok && id != "" {
+		b.TrustedDeviceID = id
+		b.TrustedDeviceName, _ = resp["trustedDeviceUserName"].(string)
+		if trusted != nil && trustedKey != nil {
+			trusted.Result = &TrustedDevice{ID: id, Name: trusted.Name, AuthKey: trustedKey}
+		}
+	}
+	return b
+}
+
+func stringOr(v any, def string) string {
+	if s, ok := v.(string); ok && s != "" {
+		return s
+	}
+	return def
 }

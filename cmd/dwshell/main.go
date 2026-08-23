@@ -183,7 +183,7 @@ func cmdLogin(ctx context.Context, args []string) int {
 		return fail("%v", err)
 	}
 
-	if err := c.Login(ctx, user, password, !noTrusted); err != nil {
+	if err := c.Login(ctx, user, password, !noTrusted, twoFactorProvider()); err != nil {
 		return fail("login failed: %v", err)
 	}
 	msg := "logged in; session saved"
