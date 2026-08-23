@@ -21,9 +21,10 @@ var stdinReader = bufio.NewReader(os.Stdin)
 
 // twoFactorProvider returns a callback that supplies a second-factor code.
 //
-// For TOTP it uses, in order: DWSHELL_TOTP_CODE (a ready code), DWSHELL_TOTP_SECRET
-// (generates the code locally), then an interactive prompt. For email it uses
-// DWSHELL_2FA_CODE or an interactive prompt (the server sends the code first).
+// For TOTP, non-interactively: DWSHELL_TOTP_SECRET lets dwshell generate the code
+// itself (regenerated on each retry), or DWSHELL_TOTP_CODE provides a ready code.
+// The email code cannot be known in advance (the server sends it on demand), so
+// it is read from the prompt or stdin. Otherwise it prompts.
 func twoFactorProvider() auth.TwoFactorFunc {
 	return func(method string, retry bool) (string, error) {
 		switch method {
@@ -38,11 +39,6 @@ func twoFactorProvider() auth.TwoFactorFunc {
 			}
 			return promptCode("Two-factor code (TOTP): ", retry)
 		case "email":
-			if !retry {
-				if code := os.Getenv("DWSHELL_2FA_CODE"); code != "" {
-					return code, nil
-				}
-			}
 			return promptCode("Enter the code sent to your email: ", retry)
 		case "device":
 			// No code: the auth layer polls until you approve on your device.
@@ -68,7 +64,7 @@ func promptCode(label string, retry bool) (string, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		if err != nil {
-			return "", fmt.Errorf("two-factor code required; provide it on stdin, or via DWSHELL_TOTP_SECRET/DWSHELL_TOTP_CODE (TOTP) or DWSHELL_2FA_CODE (email)")
+			return "", fmt.Errorf("two-factor code required; provide it on stdin, or (TOTP) via DWSHELL_TOTP_SECRET or DWSHELL_TOTP_CODE")
 		}
 	}
 	return line, nil

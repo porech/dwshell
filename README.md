@@ -182,8 +182,9 @@ DWSHELL_REMOTE_PASSWORD=… dwshell alice@myhost -c "id"
 
 - `DWSHELL_PASSWORD` — account password for `login` (avoids the prompt).
 - `DWSHELL_TOTP_SECRET` — TOTP secret; `login` generates the 2FA code from it
-  automatically (handy for automation). Alternatively `DWSHELL_TOTP_CODE` for a
-  ready code, or `DWSHELL_2FA_CODE` for an emailed code.
+  automatically (handy for automation).
+- `DWSHELL_TOTP_CODE` — a ready TOTP code (only TOTP; an emailed code can't be
+  known in advance, so provide it at the prompt or on stdin).
 - `DWSHELL_REMOTE_PASSWORD` — remote OS password when the agent requires shell
   authentication (used by `-c`, and by interactive before the first prompt).
 - `DWSHELL_CONFIG` — override the config file path.
