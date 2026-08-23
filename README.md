@@ -37,17 +37,30 @@ terminal, the way I would with SSH. That's what this tool is for. For now it onl
 supports shell access, but I may add more in the future (file management à la
 `scp`/`rsync` is top of the list). PRs to extend it are, of course, very welcome.
 
-## Build
+## Install
 
-Requires Go 1.25+.
+Grab a pre-built binary for your OS/arch from the
+[Releases](https://github.com/porech/dwshell/releases) page, or install with Go
+(requires Go 1.25+):
+
+```sh
+go install github.com/porech/dwshell/cmd/dwshell@latest
+```
+
+Or build from source:
 
 ```sh
 go build -o dwshell ./cmd/dwshell
-# optionally install into $GOBIN / $GOPATH/bin:
-go install ./cmd/dwshell
 ```
 
-Produces a single self-contained binary (pure Go, no cgo).
+It is a single self-contained binary (pure Go, no cgo). Check the version with:
+
+```sh
+dwshell --version      # e.g. "dwshell v1.2.3 (abc123def456) 2026-…"
+```
+
+The version is baked in at release time; local builds report the commit (plus a
+`-dirty` marker when the tree has uncommitted changes).
 
 ## Quick start
 

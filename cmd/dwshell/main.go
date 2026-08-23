@@ -98,6 +98,7 @@ Host flags:
 
 Global:
   --config path    Config file (default: XDG/AppData location)
+  --version        Print version and exit
 `
 
 func main() {
@@ -115,6 +116,9 @@ func run() int {
 	switch os.Args[1] {
 	case "-h", "--help", "help":
 		fmt.Print(usage)
+		return 0
+	case "-V", "--version", "version":
+		fmt.Println("dwshell " + versionString())
 		return 0
 	case "login":
 		return cmdLogin(ctx, os.Args[2:])
