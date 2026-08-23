@@ -1,0 +1,200 @@
+# dwshell
+
+A command-line client that opens a shell on a remote [DWService](https://www.dwservice.net)
+machine straight from your terminal, SSH-style — for humans or automated agents.
+
+DWService's browser client offers a "Shell" application; `dwshell` speaks the
+same protocol from the terminal, so you get a real remote shell (with colors,
+resize, and full-screen apps like `nano`/`vim`/`htop`) without a browser. It
+works with machines you own (**agents**) and machines shared with you
+(**shares**), on Linux, Windows, and macOS remotes.
+
+There is no usable public API for this — the documented REST API is a separate
+whitelabel product that only returns an iframe URL — so `dwshell` emulates the
+browser client. The protocol is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md);
+the design in [`docs/DESIGN.md`](docs/DESIGN.md).
+
+## Why?
+
+DWService is, by far, my favourite remote-control service, and I think it should
+be everyone's. These are some of the things I love the most about it:
+
+- **The control client runs entirely in the browser.** You only install the
+  agent on the machines you want to reach — nothing on the machine you connect
+  from.
+- **First-class Linux support, even on headless machines:** the install script
+  works cleanly from the terminal.
+- **You don't have to run a graphical session if you don't need one.** You can
+  just transfer files or spawn a shell — a lifesaver when the agent side has
+  little bandwidth and you only need to copy a small file or run a few commands.
+- **Affordable, clear plans** with no obscure machinery to separate personal from
+  commercial use.
+- **A very generous free plan** — usually all you'll ever need.
+
+Having the control side entirely in the browser is normally a plus, but with the
+shell feature I sometimes missed being able to launch it without leaving my
+terminal, the way I would with SSH. That's what this tool is for. For now it only
+supports shell access, but I may add more in the future (file management à la
+`scp`/`rsync` is top of the list). PRs to extend it are, of course, very welcome.
+
+## Build
+
+Requires Go 1.25+.
+
+```sh
+go build -o dwshell ./cmd/dwshell
+# optionally install into $GOBIN / $GOPATH/bin:
+go install ./cmd/dwshell
+```
+
+Produces a single self-contained binary (pure Go, no cgo).
+
+## Quick start
+
+```sh
+# 1. Authenticate once with your DWService account (email + password).
+#    This is the only command that ever asks for a password.
+$ dwshell login
+User (email): you@example.com
+Password: ********
+logged in; session saved (trusted device registered) to ~/.config/dwshell/config.json
+
+# 2. See which machines you can reach (owned agents + shares shared with you).
+$ dwshell list
+myserver        Linux    online  own     aBcD...
+buildbox        Windows  online  shared  wXyZ...
+
+# 3. Open an interactive shell (SSH-style).
+$ dwshell myserver
+root@myserver:~#
+
+# 4. Or run a single command and capture its output / exit code.
+$ dwshell myserver -c "uname -sr"
+Linux 6.8.0
+```
+
+After `login`, control commands (`list`, `<host>`, `-c`) reuse the saved session
+and **never prompt** for the account password. When the session expires they
+refresh silently via the trusted device, or, if there is none, tell you to run
+`dwshell login` again. Leave an interactive shell with `exit` (or Ctrl-D).
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `dwshell login [--user U] [--no-trusted]` | Authenticate and persist the session (and, by default, a trusted device). |
+| `dwshell logout` | Deregister the trusted device and forget local credentials. |
+| `dwshell list [--json]` | List machines with OS, online state, and owned/shared. |
+| `dwshell <host>` | Open an interactive shell. |
+| `dwshell <host> -c "cmd"` | Run a command non-interactively; exit code is propagated. |
+
+`<host>` is a machine **name** or **id**, optionally prefixed `user@` (SSH-style;
+defaults to your local username). If a name is ambiguous (a name shared between an
+owned agent and a share, or duplicate share names), pass the id or add `--own` /
+`--shared`. The `user@` part matters only when the agent requires authentication
+(below); when it does not, the shell runs as the agent's own user and an
+explicitly given `user@` is ignored with a note.
+
+### Agent-side authentication
+
+Some agents require an OS login to open the shell (`shell.enable_authentication`).
+`dwshell` handles it SSH-style: it sends the username automatically (from `user@`
+or your local username) and asks for the password **only when the agent requires
+it**. For `-c`, provide the remote password via `DWSHELL_REMOTE_PASSWORD` (it is
+never taken from the command line). Access-restricted users
+(`shell.users_allowed`) are enforced by the agent.
+
+```sh
+dwshell alice@myhost              # log in as alice; prompts for her password if required
+DWSHELL_REMOTE_PASSWORD=… dwshell alice@myhost -c "id"
+```
+
+### Flags
+
+- `-c <command>` — run a command non-interactively and exit with its code.
+- `--own` / `--shared` — resolve `<host>` among owned agents / incoming shares only.
+- `--term <value>` — TERM to send to a *nix remote (default: your local `$TERM`).
+- `--no-term` — do not send a TERM to the remote.
+- `--timeout <dur>` — command timeout for `-c` (default 60s).
+- `--config <path>` — config file location.
+- `--json` — machine-readable `list` output.
+
+### Environment variables
+
+- `DWSHELL_PASSWORD` — account password for `login` (avoids the prompt).
+- `DWSHELL_REMOTE_PASSWORD` — remote OS password when the agent requires shell
+  authentication (used by `-c`, and by interactive before the first prompt).
+- `DWSHELL_CONFIG` — override the config file path.
+
+Passwords are never read from command-line arguments.
+
+## Authentication
+
+Two credentials are stored (config file, mode 0600):
+
+- the **account session** — reused across invocations until it expires
+  (DWService freezes idle sessions after ~20 min, destroys them after 24 h);
+- a **trusted device** token (unless `--no-trusted`) — a permanent passwordless
+  credential used to refresh an expired session without a password.
+
+Trusted-device registrations are capped per account, so `dwshell` registers at
+most one and reuses it; `dwshell logout` deregisters it to free the slot.
+
+The config file lives at `~/.config/dwshell/config.json` (or `$XDG_CONFIG_HOME`)
+on Linux/macOS and `%AppData%\dwshell\config.json` on Windows, overridable with
+`--config` or `DWSHELL_CONFIG`. It is created mode 0600 and holds the session
+signing key and trusted-device token — treat it as a secret.
+
+## Terminal behavior
+
+The remote is a real PTY (ConPTY on Windows), so colors, cursor control, resize
+(`SIGWINCH`), and full-screen apps work. `TERM` is a *nix concept, so `dwshell`
+propagates your local `$TERM` to Unix remotes (falling back to `xterm-256color`
+when unset, e.g. on Windows) and sends nothing to Windows remotes. Override with
+`--term`, disable with `--no-term`. If a remote lacks the terminfo entry for your
+`$TERM` (curses apps complain), pass `--term xterm-256color`.
+
+## Scope
+
+v1 focuses on the shell. The code is structured so other DWService apps can be
+added as sibling packages without reworking the core: file transfer (the
+`filesystem` app), graphical session takeover (the `desktop` app), and a possible
+native UI all reuse the same login/session/connect libraries under `internal/`.
+
+## Status
+
+Reverse-engineered and verified end-to-end against the live service on Linux and
+Windows remotes. Unit tests cover the crypto, request framing, and host
+resolution; `go test ./...`.
+
+## Legal & disclaimer
+
+`dwshell` is an **independent, unofficial** client. It is **not affiliated with,
+authorized, sponsored, or endorsed by** DWService or its owner. "DWService" and
+any related names or logos are trademarks of their respective owner and are used
+here only nominatively, to describe compatibility.
+
+- **No DWService code is included.** This project is a clean-room reimplementation
+  based on observable protocol facts (endpoints, message formats, field names).
+  DWService's browser client ("the Application") is proprietary and is **not**
+  copied, bundled, or redistributed here. `docs/PROTOCOL.md` documents the wire
+  protocol for interoperability; it contains no DWService source code.
+- **Interoperability.** The project exists to interoperate with a service the
+  user already has an account on. In the EU, creating an independent, compatible
+  program is supported by the Software Directive (2009/24/EC, art. 6).
+- **Your responsibility.** Use `dwshell` only with your own DWService account and
+  only to reach machines you are authorized to access. You remain bound by
+  DWService's Terms & Conditions; using a non-official client is your decision and
+  risk. DWService's terms permit personal use of the service but restrict copying/
+  redistributing *their* Application — which this project does not do.
+- **License.** `dwshell`'s own source is released under the [MIT License](LICENSE).
+  The copyright holder in `LICENSE` is a placeholder — set it to the actual author/
+  owner before publishing.
+
+This section is informational, not legal advice. If you need certainty for your
+situation, consult a lawyer or request written authorization/clarification from
+DWService.
+
+> Note for contributors: never commit DWService's client/agent source or assets.
+> A local `/.reverse-engineering/` scratch directory (if you recreate one) is
+> git-ignored for this reason.

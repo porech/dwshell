@@ -1,0 +1,9 @@
+# built binary
+/dwshell
+/dwshell.exe
+
+# local config / credentials
+*.config.json
+
+# reverse-engineering scratch (third-party client JS; not for distribution)
+/.reverse-engineering/
