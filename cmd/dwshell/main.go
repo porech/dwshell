@@ -96,7 +96,7 @@ Host flags:
   --shared         Resolve <host> among incoming shares only
   --term string    TERM to send to a *nix remote (default: local $TERM)
   --no-term        Do not send a TERM to the remote
-  --timeout dur    Command timeout for -c (default 60s)
+  --timeout dur    Command timeout for -c (default: none)
 
 Global:
   --config path    Config file (default: XDG/AppData location)
@@ -283,7 +283,7 @@ func cmdHost(ctx context.Context, args []string) int {
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 	fs.BoolVar(&noTerm, "no-term", false, "do not send TERM")
-	fs.DurationVar(&timeout, "timeout", 60*time.Second, "command timeout")
+	fs.DurationVar(&timeout, "timeout", 0, "command timeout for -c (0 = no timeout)")
 
 	hostArg, rest := extractHost(args)
 	if hostArg == "" {

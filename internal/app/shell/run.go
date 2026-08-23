@@ -59,14 +59,21 @@ func Run(ctx context.Context, sess *session.Session, os remote.OS, command strin
 	}
 
 	var buf bytes.Buffer
-	deadline := time.NewTimer(timeout)
-	defer deadline.Stop()
+
+	// A non-positive timeout means no deadline (rely on ctx / Ctrl-C); a nil
+	// channel blocks forever in the select.
+	var timeoutCh <-chan time.Time
+	if timeout > 0 {
+		t := time.NewTimer(timeout)
+		defer t.Stop()
+		timeoutCh = t.C
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-deadline.C:
+		case <-timeoutCh:
 			return nil, fmt.Errorf("timed out waiting for command to finish")
 		case chunk, ok := <-sh.Output():
 			if !ok {

@@ -168,7 +168,7 @@ DWSHELL_REMOTE_PASSWORD=… dwshell alice@myhost -c "id"
 - `--own` / `--shared` — resolve `<host>` among owned agents / incoming shares only.
 - `--term <value>` — TERM to send to a *nix remote (default: your local `$TERM`).
 - `--no-term` — do not send a TERM to the remote.
-- `--timeout <dur>` — command timeout for `-c` (default 60s).
+- `--timeout <dur>` — command timeout for `-c` (default: none; e.g. `30s`, `5m`).
 - `--config <path>` — config file location.
 - `--json` — machine-readable `list` output.
 
