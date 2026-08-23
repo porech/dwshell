@@ -39,28 +39,52 @@ supports shell access, but I may add more in the future (file management à la
 
 ## Install
 
-Grab a pre-built binary for your OS/arch from the
-[Releases](https://github.com/porech/dwshell/releases) page, or install with Go
-(requires Go 1.25+):
+`dwshell` is a single self-contained binary (pure Go, no cgo). Pick one:
+
+### Download a pre-built binary (recommended)
+
+Get the archive for your OS/arch from the **[latest release](https://github.com/porech/dwshell/releases/latest)**
+(Linux/macOS/Windows, amd64/arm64), extract it, and put the `dwshell` binary on
+your `PATH`. For example, on Linux/macOS:
+
+```sh
+# replace the URL with the asset matching your OS/arch from the release page
+curl -sSL -o dwshell.tar.gz \
+  https://github.com/porech/dwshell/releases/latest/download/dwshell_<version>_<os>_<arch>.tar.gz
+tar -xzf dwshell.tar.gz dwshell
+sudo mv dwshell /usr/local/bin/
+```
+
+On Windows, download the `.zip`, extract `dwshell.exe`, and place it in a folder
+on your `PATH`.
+
+### With `go install`
+
+Requires Go 1.25+:
 
 ```sh
 go install github.com/porech/dwshell/cmd/dwshell@latest
 ```
 
-Or build from source:
+This installs `dwshell` into `$GOBIN` (or `$(go env GOPATH)/bin`).
+
+### Build from source
 
 ```sh
+git clone https://github.com/porech/dwshell.git
+cd dwshell
 go build -o dwshell ./cmd/dwshell
 ```
 
-It is a single self-contained binary (pure Go, no cgo). Check the version with:
+### Verifying
 
 ```sh
-dwshell --version      # e.g. "dwshell v1.2.3 (abc123def456) 2026-…"
+dwshell --version      # e.g. "dwshell v1.0.0 (abc123def456) 2026-…"
 ```
 
-The version is baked in at release time; local builds report the commit (plus a
-`-dirty` marker when the tree has uncommitted changes).
+The version is baked in at release time; `go install` reports the module version,
+and source builds report the commit (plus a `-dirty` marker when the working tree
+has uncommitted changes).
 
 ## Quick start
 
