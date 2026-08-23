@@ -101,6 +101,13 @@ Host flags:
 Global:
   --config path    Config file (default: XDG/AppData location)
   --version        Print version and exit
+
+Host name vs subcommand:
+  "dwshell <host>" is a shortcut: the first argument is treated as a host unless
+  it is a known subcommand (login, logout, list, shell, version, help). If a
+  machine is actually named like one of those, use the explicit form
+  "dwshell shell <host>", which always treats the argument as a host
+  (e.g. "dwshell shell version" connects to the host named "version").
 `
 
 func main() {
