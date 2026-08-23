@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	neturl "net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/porech/dwshell/internal/auth"
@@ -17,6 +19,26 @@ import (
 	"github.com/porech/dwshell/internal/remote"
 	"github.com/porech/dwshell/internal/session"
 )
+
+// deviceName labels a registered trusted device with the local hostname, so it
+// is identifiable in the account's device list.
+func deviceName() string { return deviceNameFor(hostname()) }
+
+func deviceNameFor(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return "dwshell"
+	}
+	return "dwshell on " + host
+}
+
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return h
+}
 
 // ErrNeedLogin means no valid session and no trusted device: the user must run
 // `dwshell login`.
@@ -68,7 +90,7 @@ func (c *Client) Login(ctx context.Context, user, password string, registerTrust
 
 	var tdReq *auth.TrustedDeviceRequest
 	if registerTrusted {
-		tdReq = auth.NewTrustedDeviceRequest("dwshell")
+		tdReq = auth.NewTrustedDeviceRequest(deviceName())
 	}
 	boot, err := auth.LoginPassword(ctx, c.http, cfg, user, password, tdReq, twoFA)
 	if err != nil {
