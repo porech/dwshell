@@ -87,6 +87,8 @@ Usage:
   dwshell list [--json]                       List machines (agents + shares)
   dwshell <host> [flags]                      Open an interactive shell
   dwshell <host> -c "command" [flags]         Run a command and exit
+  dwshell shell <host> [flags]                Explicit form (use if <host> is
+                                              named like a subcommand)
 
 Host flags:
   -c string        Run command non-interactively, capture output, exit
@@ -126,7 +128,13 @@ func run() int {
 		return cmdLogout(ctx, os.Args[2:])
 	case "list", "ls":
 		return cmdList(ctx, os.Args[2:])
+	case "shell":
+		// Explicit form: the next argument is always a host, even if it happens
+		// to be named like a subcommand (e.g. `dwshell shell version`).
+		return cmdHost(ctx, os.Args[2:])
 	default:
+		// Shortcut form: `dwshell <host> [flags]`. If your host is named like a
+		// subcommand, use the explicit `dwshell shell <host>` form above.
 		return cmdHost(ctx, os.Args[1:])
 	}
 }

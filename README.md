@@ -100,6 +100,12 @@ refresh silently via the trusted device, or, if there is none, tell you to run
 | `dwshell list [--json]` | List machines with OS, online state, and owned/shared. |
 | `dwshell <host>` | Open an interactive shell. |
 | `dwshell <host> -c "cmd"` | Run a command non-interactively; exit code is propagated. |
+| `dwshell shell <host>` | Explicit form of the above. |
+
+`dwshell <host>` is a shortcut: the first argument is treated as a host unless it
+is a known subcommand (`login`, `logout`, `list`, `version`, `help`). If you have
+a machine actually named like one of those, use the explicit
+`dwshell shell <host>` form (e.g. `dwshell shell version`).
 
 `<host>` is a machine **name** or **id**, optionally prefixed `user@` (SSH-style;
 defaults to your local username). If a name is ambiguous (a name shared between an
