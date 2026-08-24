@@ -7,3 +7,12 @@
 
 # reverse-engineering scratch (third-party client JS; not for distribution)
 /.reverse-engineering/
+
+# Signing key material — must never be committed (see docs/superpowers/specs/2026-08-24-package-distribution-design.md)
+*.asc
+*.gpg
+*.rsa
+*.rsa.pub
+*.key
+*.pem
+dwshell-keys/
