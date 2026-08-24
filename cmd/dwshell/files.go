@@ -23,6 +23,17 @@ func parseRemote(s string) (host, rpath string, err error) {
 	return s[:i], s[i+1:], nil
 }
 
+// normalizeRemotePath makes '/' and '\' interchangeable on Windows remotes,
+// where the agent accepts both — so basename/trailing-separator logic is correct
+// regardless of which the user typed. On *nix, '\' is a literal filename char and
+// is left untouched.
+func normalizeRemotePath(p string, os remote.OS) string {
+	if os == remote.OSWindows {
+		return strings.ReplaceAll(p, "\\", "/")
+	}
+	return p
+}
+
 func filterFrom(own, shared bool) (remote.Filter, error) {
 	switch {
 	case own && shared:
@@ -66,14 +77,14 @@ func cmdLs(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	_, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
 	if err != nil {
 		return fail("%v", err)
 	}
 	if err := files.Open(ctx, sess); err != nil {
 		return fail("%v", err)
 	}
-	entries, err := files.List(ctx, sess, rpath)
+	entries, err := files.List(ctx, sess, normalizeRemotePath(rpath, m.OS))
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -116,14 +127,9 @@ func cmdGet(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	local := ""
+	localArg := ""
 	if len(pos) == 2 {
-		local = pos[1]
-	}
-	if local == "" {
-		local = path.Base(rpath) // remote paths use '/'
-	} else if fi, err := os.Stat(local); err == nil && fi.IsDir() {
-		local = filepath.Join(local, path.Base(rpath))
+		localArg = pos[1]
 	}
 	filter, err := filterFrom(own, shared)
 	if err != nil {
@@ -134,12 +140,20 @@ func cmdGet(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	_, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
 	if err != nil {
 		return fail("%v", err)
 	}
 	if err := files.Open(ctx, sess); err != nil {
 		return fail("%v", err)
+	}
+	rpath = normalizeRemotePath(rpath, m.OS)
+
+	local := localArg
+	if local == "" {
+		local = path.Base(rpath) // rpath normalized to '/'
+	} else if fi, err := os.Stat(local); err == nil && fi.IsDir() {
+		local = filepath.Join(local, path.Base(rpath))
 	}
 	n, err := files.Get(ctx, sess, rpath, local)
 	if err != nil {
@@ -173,13 +187,6 @@ func cmdPut(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	// If the remote ends with '/', treat it as a directory and append the base.
-	if strings.HasSuffix(rpath, "/") {
-		if local == "-" {
-			return fail("a remote file name is required when reading from stdin")
-		}
-		rpath += filepath.Base(local)
-	}
 	filter, err := filterFrom(own, shared)
 	if err != nil {
 		return fail("%v", err)
@@ -189,12 +196,21 @@ func cmdPut(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	_, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
 	if err != nil {
 		return fail("%v", err)
 	}
 	if err := files.Open(ctx, sess); err != nil {
 		return fail("%v", err)
+	}
+	rpath = normalizeRemotePath(rpath, m.OS)
+
+	// If the remote ends with '/', treat it as a directory and append the base.
+	if strings.HasSuffix(rpath, "/") {
+		if local == "-" {
+			return fail("a remote file name is required when reading from stdin")
+		}
+		rpath += filepath.Base(local)
 	}
 	n, err := files.Put(ctx, sess, local, rpath)
 	if err != nil {

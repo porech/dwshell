@@ -37,3 +37,14 @@ func TestSplitPositional(t *testing.T) {
 		t.Fatalf("flags wrong: %v", flags)
 	}
 }
+
+func TestNormalizeRemotePath(t *testing.T) {
+	// Windows remote: backslashes become slashes (interchangeable).
+	if got := normalizeRemotePath(`C:\Windows\System32`, 1 /*OSWindows*/); got != "C:/Windows/System32" {
+		t.Errorf("windows: got %q", got)
+	}
+	// *nix remote: backslash is a literal char, left untouched.
+	if got := normalizeRemotePath(`/home/a\b`, 0 /*OSLinux*/); got != `/home/a\b` {
+		t.Errorf("linux: got %q", got)
+	}
+}
