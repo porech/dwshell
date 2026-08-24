@@ -13,7 +13,7 @@ func TestParseRemote(t *testing.T) {
 		{"myhost:/", "myhost", "/", true},
 		{"/local/path", "", "", false}, // no colon
 		{":/nohost", "", "", false},    // empty host
-		{"host:", "", "", false},       // empty path
+		{"host:", "host", "", true},    // empty path means the remote root
 	}
 	for _, tc := range tests {
 		host, p, err := parseRemote(tc.in)
@@ -38,14 +38,37 @@ func TestSplitPositional(t *testing.T) {
 	}
 }
 
-func TestNormalizeRemotePath(t *testing.T) {
-	// Windows remote: backslashes become slashes (interchangeable).
-	if got := normalizeRemotePath(`C:\Windows\System32`, 1 /*OSWindows*/); got != "C:/Windows/System32" {
-		t.Errorf("windows: got %q", got)
+func TestCanonicalRemotePath(t *testing.T) {
+	const linux, windows = 0, 1 // remote.OSLinux, remote.OSWindows
+
+	nix := map[string]string{
+		"/etc/hostname": "/etc/hostname",
+		"tmp":           "/tmp", // relative -> anchored to root
+		"foo/bar":       "/foo/bar",
+		"":              "/", // empty -> root
+		"/":             "/",
+		`/home/a\b`:     `/home/a\b`, // '\' is a literal filename char on *nix
 	}
-	// *nix remote: backslash is a literal char, left untouched.
-	if got := normalizeRemotePath(`/home/a\b`, 0 /*OSLinux*/); got != `/home/a\b` {
-		t.Errorf("linux: got %q", got)
+	for in, want := range nix {
+		if got := canonicalRemotePath(in, linux); got != want {
+			t.Errorf("nix canonicalRemotePath(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	win := map[string]string{
+		`C:\Windows\System32`: "C:/Windows/System32", // '\' -> '/'
+		"C:/Windows":          "C:/Windows",
+		"/C:/Windows":         "C:/Windows", // leading slash before a drive is stripped
+		"/C:":                 "C:/",        // bare drive -> drive root
+		"C:":                  "C:/",
+		"":                    "$", // root -> drive list
+		"/":                   "$",
+		`\`:                   "$",
+	}
+	for in, want := range win {
+		if got := canonicalRemotePath(in, windows); got != want {
+			t.Errorf("win canonicalRemotePath(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

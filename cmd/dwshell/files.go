@@ -17,10 +17,11 @@ import (
 )
 
 // parseRemote splits a "host:path" endpoint. It splits on the first colon so
-// remote Windows paths (host:C:\dir) work; the host must be non-empty.
+// remote Windows paths (host:C:\dir) work; the host must be non-empty. An empty
+// path is allowed and means the remote root (see canonicalRemotePath).
 func parseRemote(s string) (host, rpath string, err error) {
 	i := strings.IndexByte(s, ':')
-	if i <= 0 || i == len(s)-1 {
+	if i <= 0 {
 		return "", "", fmt.Errorf("expected host:path, got %q", s)
 	}
 	return s[:i], s[i+1:], nil
@@ -40,15 +41,43 @@ func isRemoteEndpoint(s string) bool {
 	return true
 }
 
-// normalizeRemotePath makes '/' and '\' interchangeable on Windows remotes,
-// where the agent accepts both — so basename/trailing-separator logic is correct
-// regardless of which the user typed. On *nix, '\' is a literal filename char and
-// is left untouched.
-func normalizeRemotePath(p string, os remote.OS) string {
+// canonicalRemotePath maps a user-supplied remote path onto the agent's
+// namespace, where '/' is the root. Relative paths are anchored to root and an
+// empty path means root, so a path never resolves against the agent's own
+// working directory.
+//
+// On Windows '/' masks the drive namespace: '/' (or empty) lists the drives via
+// the '$' root sentinel; '/C:/dir' and 'C:/dir' both address drive C (a leading
+// slash before a drive is stripped, since the agent rejects it); and a bare drive
+// letter is expanded to its root ('C:' -> 'C:/') so it is not taken as the agent's
+// working directory. '\' and '/' are interchangeable on Windows. On *nix, '\' is a
+// literal filename character and is left untouched.
+func canonicalRemotePath(p string, os remote.OS) string {
 	if os == remote.OSWindows {
-		return strings.ReplaceAll(p, "\\", "/")
+		p = strings.ReplaceAll(p, "\\", "/")
+		if p == "" || p == "/" {
+			return "$" // root: list drives
+		}
+		p = strings.TrimPrefix(p, "/") // '/C:/dir' -> 'C:/dir'
+		if isDriveLetter(p) {
+			p += "/" // 'C:' -> 'C:/' (drive root, not the agent's cwd)
+		}
+		return p
+	}
+	// *nix: anchor everything to the filesystem root.
+	if p == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
 	}
 	return p
+}
+
+// isDriveLetter reports whether p is a bare Windows drive reference like "C:".
+func isDriveLetter(p string) bool {
+	return len(p) == 2 && p[1] == ':' &&
+		((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z'))
 }
 
 func filterFrom(own, shared bool) (remote.Filter, error) {
@@ -76,14 +105,18 @@ func cmdLs(ctx context.Context, args []string) int {
 
 	endpoint, rest := extractHost(args)
 	if endpoint == "" {
-		return fail("usage: dwshell ls <host>:<path>")
+		return fail("usage: dwshell ls <host>[:<path>]")
 	}
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
-	host, rpath, err := parseRemote(endpoint)
-	if err != nil {
-		return fail("%v", err)
+	// The path is optional: "dwshell ls <host>" (or "<host>:") lists the root.
+	host, rpath := endpoint, ""
+	if strings.ContainsRune(endpoint, ':') {
+		var err error
+		if host, rpath, err = parseRemote(endpoint); err != nil {
+			return fail("%v", err)
+		}
 	}
 	filter, err := filterFrom(own, shared)
 	if err != nil {
@@ -101,7 +134,7 @@ func cmdLs(ctx context.Context, args []string) int {
 	if err := files.Open(ctx, sess); err != nil {
 		return fail("%v", err)
 	}
-	entries, err := files.List(ctx, sess, normalizeRemotePath(rpath, m.OS))
+	entries, err := files.List(ctx, sess, canonicalRemotePath(rpath, m.OS))
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -165,7 +198,7 @@ func cmdGet(ctx context.Context, args []string) int {
 	if err := files.Open(ctx, sess); err != nil {
 		return fail("%v", err)
 	}
-	rpath = normalizeRemotePath(rpath, m.OS)
+	rpath = canonicalRemotePath(rpath, m.OS)
 
 	if recursive {
 		base := path.Base(strings.TrimRight(rpath, "/"))
@@ -253,7 +286,7 @@ func cmdSync(ctx context.Context, args []string) int {
 	if err := files.Open(ctx, sess); err != nil {
 		return fail("%v", err)
 	}
-	rpath = normalizeRemotePath(rpath, m.OS)
+	rpath = canonicalRemotePath(rpath, m.OS)
 
 	cfg := files.SyncConfig{
 		Direction:  dir,
@@ -436,7 +469,7 @@ func cmdRm(ctx context.Context, args []string) int {
 	if recursive {
 		rc := 0
 		for _, rp := range rpaths {
-			rp = normalizeRemotePath(rp, m.OS)
+			rp = canonicalRemotePath(rp, m.OS)
 			if err := files.RemoveRecursive(ctx, sess, rp); err != nil {
 				rc = fail("%v", err)
 				continue
@@ -450,7 +483,7 @@ func cmdRm(ctx context.Context, args []string) int {
 	byDir := map[string][]string{}
 	var order []string
 	for _, rp := range rpaths {
-		rp = normalizeRemotePath(rp, m.OS)
+		rp = canonicalRemotePath(rp, m.OS)
 		dir := path.Dir(rp)
 		if !strings.HasSuffix(dir, "/") {
 			dir += "/"
@@ -514,7 +547,7 @@ func cmdPut(ctx context.Context, args []string) int {
 	if err := files.Open(ctx, sess); err != nil {
 		return fail("%v", err)
 	}
-	rpath = normalizeRemotePath(rpath, m.OS)
+	rpath = canonicalRemotePath(rpath, m.OS)
 
 	if recursive {
 		if local == "-" {

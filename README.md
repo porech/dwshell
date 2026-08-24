@@ -129,7 +129,7 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell <host>` | Open an interactive shell. |
 | `dwshell <host> -c "cmd"` | Run a command non-interactively; exit code is propagated. |
 | `dwshell shell <host>` | Explicit form of the above. |
-| `dwshell ls <host>:<path>` | List a remote directory. |
+| `dwshell ls <host>[:<path>]` | List a remote directory (root if the path is omitted). |
 | `dwshell get [-r] <host>:<remote> [local]` | Download a file (or directory with `-r`). |
 | `dwshell put [-r] <local> <host>:<remote>` | Upload a file (or directory with `-r`). |
 | `dwshell rm [-r] <host>:<path> [...]` | Remove remote file(s) (directories with `-r`). |
@@ -144,6 +144,7 @@ are written `host:path` (the split is on the first colon, so a remote Windows
 path like `GHE:C:\Users` works):
 
 ```sh
+dwshell ls GHE                          # list the root ("dwshell ls GHE:" too)
 dwshell ls GHE:/etc                     # list a remote directory
 dwshell get GHE:/etc/os-release         # download into ./os-release
 dwshell get GHE:/var/log/syslog -       # download to stdout
@@ -164,8 +165,12 @@ download; on upload it sets the remote mtime via the shell — falling back to
 size-only when that is unavailable, e.g. on Windows remotes). `--size-only` compares by size only; `--checksum` compares by SHA-256 (hashing
 the remote via the shell); `--delete` removes destination entries missing from
 the source; `-n` is a dry run.
-`--own` / `--shared` disambiguate the host as elsewhere. On Windows remotes `/`
-and `\` are interchangeable.
+`--own` / `--shared` disambiguate the host as elsewhere.
+
+Remote paths are always rooted at `/`, so `GHE:/etc` and a relative `GHE:etc`
+address the same directory, and an omitted path means the root. On Windows `/` is
+the root and lists the drives; address a drive as `host:/C:/dir` or `host:C:/dir`
+(`/` and `\` are interchangeable, and a bare `host:C:` means the drive root).
 
 #### Host name vs subcommand
 

@@ -89,7 +89,7 @@ Usage:
   dwshell <host> -c "command" [flags]         Run a command and exit
   dwshell shell <host> [flags]                Explicit form (use if <host> is
                                               named like a subcommand)
-  dwshell ls <host>:<path>                    List a remote directory
+  dwshell ls <host>[:<path>]                  List a remote directory (root if omitted)
   dwshell get [-r] <host>:<remote> [local]     Download a file or directory
   dwshell put [-r] <local> <host>:<remote>     Upload a file or directory
   dwshell rm [-r] <host>:<path> [<path>...]     Remove remote file(s)/dir(s)
@@ -106,6 +106,12 @@ Host flags:
 Global:
   --config path    Config file (default: XDG/AppData location)
   --version        Print version and exit
+
+Remote paths:
+  Remote paths are always rooted at "/", so "/etc" and a relative "etc" mean the
+  same thing. On Windows "/" is the root and lists the drives; address a drive as
+  "/C:/dir" or "C:/dir" ('/' and '\' are interchangeable). If the path is omitted,
+  the root is used.
 
 Host name vs subcommand:
   "dwshell <host>" is a shortcut: the first argument is treated as a host unless
