@@ -133,6 +133,8 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell get <host>:<remote> [local]` | Download a file. |
 | `dwshell put <local> <host>:<remote>` | Upload a file. |
 | `dwshell rm <host>:<path> [...]` | Remove remote file(s). |
+| `dwshell version` | Print the version and exit. |
+| `dwshell help` | Show usage. |
 
 #### File transfer
 
@@ -156,9 +158,9 @@ and `\` are interchangeable.
 #### Host name vs subcommand
 
 `dwshell <host>` is a convenience shortcut: the first argument is treated as a
-host **unless** it exactly matches a known subcommand — `login`, `logout`,
-`list`, `ls`, `get`, `put`, `rm`, `shell`, `version`, or `help`. So `dwshell version`
-prints the version, it does not connect to a machine.
+host **unless** it exactly matches one of the subcommands in the
+[Commands](#commands) table above. So `dwshell version` prints the version, it
+does not connect to a machine.
 
 If you actually have a machine named like one of those, use the explicit `shell`
 subcommand, which always treats its argument as a host:

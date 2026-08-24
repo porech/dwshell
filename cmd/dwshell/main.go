@@ -108,10 +108,9 @@ Global:
 
 Host name vs subcommand:
   "dwshell <host>" is a shortcut: the first argument is treated as a host unless
-  it is a known subcommand (login, logout, list, ls, get, put, rm, shell,
-  version, help). If a machine is actually named like one of those, use the
-  explicit form "dwshell shell <host>", which always treats the argument as a
-  host (e.g. "dwshell shell version" connects to the host named "version").
+  it is one of the subcommands listed above. If a machine is actually named like
+  one of those, use the explicit form "dwshell shell <host>", which always treats
+  the argument as a host (e.g. "dwshell shell version" → host named "version").
 `
 
 func main() {
