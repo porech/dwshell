@@ -296,6 +296,12 @@ when unset, e.g. on Windows) and sends nothing to Windows remotes. Override with
 `--term`, disable with `--no-term`. If a remote lacks the terminfo entry for your
 `$TERM` (curses apps complain), pass `--term xterm-256color`.
 
+**Disconnecting.** Exiting the remote shell (`exit`, `Ctrl-D`) ends the session
+on Unix remotes. Windows agents never report that their shell exited, so `exit`
+there leaves the session open — use the SSH-style escape **`~.`** typed at the
+start of a line to disconnect. (`~~` at the start of a line sends a literal `~`;
+elsewhere `~` is an ordinary character.)
+
 ## Scope
 
 v1 focuses on the shell. The code is structured so other DWService apps can be

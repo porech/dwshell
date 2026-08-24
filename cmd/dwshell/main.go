@@ -437,6 +437,12 @@ func interactive(ctx context.Context, sess *session.Session, m *remote.Machine, 
 		_ = sh.Input("export TERM=" + tv + "; printf '\\033[H\\033[2J'\r")
 	}
 
+	if m.OS == remote.OSWindows {
+		// A Windows agent never reports the shell's exit, so `exit` can't close
+		// the session; the local "~." escape is the way out.
+		fmt.Fprint(os.Stderr, "\r\ndwshell: type ~. on a fresh line to disconnect (a Windows shell won't report 'exit').\r\n")
+	}
+
 	if err := term.Bridge(ctx, sh); err != nil && !isInterrupt(err) {
 		return fail("%v", err)
 	}

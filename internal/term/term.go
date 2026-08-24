@@ -20,6 +20,48 @@ type Remote interface {
 	Output() <-chan []byte
 }
 
+// escapeScanner implements the SSH-style "~." disconnect escape. The escape is
+// recognized only at the start of a line: after a newline the user sent (or at
+// session start), a "~" is held; a following "." requests disconnect, "~" sends a
+// single literal "~", and any other byte sends "~" then that byte. Everywhere
+// else "~" is an ordinary character.
+type escapeScanner struct {
+	atLineStart bool
+	sawTilde    bool
+}
+
+func newEscapeScanner() *escapeScanner { return &escapeScanner{atLineStart: true} }
+
+// feed processes input bytes, returning the bytes to forward to the remote and
+// whether the user requested disconnect (the "~." was consumed, not forwarded).
+func (e *escapeScanner) feed(in []byte) (out []byte, disconnect bool) {
+	for _, c := range in {
+		if e.sawTilde {
+			e.sawTilde = false
+			switch c {
+			case '.':
+				return out, true
+			case '~':
+				out = append(out, '~')
+				e.atLineStart = false
+				continue
+			default:
+				out = append(out, '~', c)
+				e.atLineStart = c == '\r' || c == '\n'
+				continue
+			}
+		}
+		if e.atLineStart && c == '~' {
+			e.sawTilde = true
+			e.atLineStart = false
+			continue
+		}
+		out = append(out, c)
+		e.atLineStart = c == '\r' || c == '\n'
+	}
+	return out, false
+}
+
 // Size returns the local terminal size, defaulting to 80x24 when stdout is not
 // a terminal.
 func Size() (cols, rows int) {
@@ -46,13 +88,22 @@ func Bridge(ctx context.Context, r Remote) error {
 		}
 	}
 
-	// stdin → remote input
+	// stdin → remote input, with the SSH-style "~." disconnect escape.
+	quit := make(chan struct{})
 	go func() {
 		buf := make([]byte, 4096)
+		esc := newEscapeScanner()
 		for {
 			n, err := os.Stdin.Read(buf)
 			if n > 0 {
-				if werr := r.Input(string(buf[:n])); werr != nil {
+				out, disc := esc.feed(buf[:n])
+				if len(out) > 0 {
+					if werr := r.Input(string(out)); werr != nil {
+						return
+					}
+				}
+				if disc {
+					close(quit)
 					return
 				}
 			}
@@ -87,6 +138,8 @@ func Bridge(ctx context.Context, r Remote) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-quit: // user typed the "~." disconnect escape
+			return nil
 		case chunk, ok := <-out:
 			if !ok {
 				return nil
