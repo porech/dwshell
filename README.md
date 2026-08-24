@@ -33,9 +33,7 @@ be everyone's. These are some of the things I love the most about it:
 
 Having the control side entirely in the browser is normally a plus, but with the
 shell feature I sometimes missed being able to launch it without leaving my
-terminal, the way I would with SSH. That's what this tool is for. Alongside the
-shell it can already transfer files (`ls`/`get`/`put`/`rm`); recursive copy and
-`rsync`-style sync are on the way. PRs to extend it are, of course, very welcome.
+terminal, the way I would with SSH. That's what this tool is for.
 
 ## Install
 
