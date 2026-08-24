@@ -130,15 +130,15 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell <host> -c "cmd"` | Run a command non-interactively; exit code is propagated. |
 | `dwshell shell <host>` | Explicit form of the above. |
 | `dwshell ls <host>:<path>` | List a remote directory. |
-| `dwshell get <host>:<remote> [local]` | Download a file. |
+| `dwshell get [-r] <host>:<remote> [local]` | Download a file (or directory with `-r`). |
 | `dwshell put <local> <host>:<remote>` | Upload a file. |
-| `dwshell rm <host>:<path> [...]` | Remove remote file(s). |
+| `dwshell rm [-r] <host>:<path> [...]` | Remove remote file(s) (directories with `-r`). |
 | `dwshell version` | Print the version and exit. |
 | `dwshell help` | Show usage. |
 
 #### File transfer
 
-`ls`, `get`, and `put` operate on the DWService filesystem app. Remote endpoints
+`ls`, `get`, `put`, and `rm` operate on the DWService filesystem app. Remote endpoints
 are written `host:path` (the split is on the first colon, so a remote Windows
 path like `GHE:C:\Users` works):
 
@@ -149,9 +149,12 @@ dwshell get GHE:/var/log/syslog -       # download to stdout
 dwshell put ./report.pdf GHE:/tmp/      # upload (trailing / keeps the name)
 cat data | dwshell put - GHE:/tmp/data  # upload from stdin
 dwshell rm GHE:/tmp/old.log GHE:/tmp/x  # remove one or more files
+dwshell get -r GHE:/etc/nginx ./nginx   # download a directory tree
+dwshell rm -r GHE:/tmp/build            # remove a directory tree
 ```
 
-Currently single files only; recursive copy, remove, and sync are planned.
+Single-file `get`/`put`, plus recursive `get -r` and `rm -r` (upload `put -r`
+and `rsync`-style sync are planned).
 `--own` / `--shared` disambiguate the host as elsewhere. On Windows remotes `/`
 and `\` are interchangeable.
 

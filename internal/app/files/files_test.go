@@ -45,3 +45,15 @@ func TestParseRemoveFailures(t *testing.T) {
 		t.Fatalf("expected no failures, got %v", f)
 	}
 }
+
+func TestJoinRemote(t *testing.T) {
+	if got := joinRemote("/etc", "hosts"); got != "/etc/hosts" {
+		t.Errorf("got %q", got)
+	}
+	if got := joinRemote("/etc/", "hosts"); got != "/etc/hosts" {
+		t.Errorf("got %q", got)
+	}
+	if got := joinRemote("C:/Windows", "System32"); got != "C:/Windows/System32" {
+		t.Errorf("got %q", got)
+	}
+}

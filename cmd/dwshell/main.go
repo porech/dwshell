@@ -90,9 +90,9 @@ Usage:
   dwshell shell <host> [flags]                Explicit form (use if <host> is
                                               named like a subcommand)
   dwshell ls <host>:<path>                    List a remote directory
-  dwshell get <host>:<remote> [local]         Download a file
+  dwshell get [-r] <host>:<remote> [local]     Download a file or directory
   dwshell put <local> <host>:<remote>         Upload a file
-  dwshell rm <host>:<path> [<host>:<path>...]  Remove remote file(s)
+  dwshell rm [-r] <host>:<path> [<path>...]     Remove remote file(s)/dir(s)
 
 Host flags:
   -c string        Run command non-interactively, capture output, exit

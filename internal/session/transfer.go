@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 )
 
 // Download opens a file transfer from an app (e.g. "filesystem") and returns the
@@ -86,7 +87,8 @@ func (s *Session) transferURL(module, request, fullPath string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s?module=%s&request=%s&path=%s&key=K1&_sk=%s",
+	xkey := "K" + strconv.FormatUint(s.xfer.Add(1), 10)
+	return fmt.Sprintf("%s?module=%s&request=%s&path=%s&key=%s&_sk=%s",
 		s.commandURL, url.QueryEscape(module), request,
-		url.QueryEscape(fullPath), url.QueryEscape(key)), nil
+		url.QueryEscape(fullPath), xkey, url.QueryEscape(key)), nil
 }

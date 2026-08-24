@@ -110,11 +110,12 @@ func cmdLs(ctx context.Context, args []string) int {
 
 func cmdGet(ctx context.Context, args []string) int {
 	var configPath string
-	var own, shared bool
+	var own, shared, recursive bool
 	fs := newFlags("get")
 	fs.StringVar(&configPath, "config", "", "config path")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
+	fs.BoolVar(&recursive, "r", false, "download a directory recursively")
 
 	pos, flagArgs := splitPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -149,6 +150,22 @@ func cmdGet(ctx context.Context, args []string) int {
 	}
 	rpath = normalizeRemotePath(rpath, m.OS)
 
+	if recursive {
+		base := path.Base(strings.TrimRight(rpath, "/"))
+		localRoot := localArg
+		if localRoot == "" {
+			localRoot = base
+		} else if fi, err := os.Stat(localRoot); err == nil && fi.IsDir() {
+			localRoot = filepath.Join(localRoot, base)
+		}
+		count, total, err := files.GetRecursive(ctx, sess, rpath, localRoot)
+		if err != nil {
+			return fail("%v", err)
+		}
+		fmt.Fprintf(os.Stderr, "downloaded %d files (%d bytes) → %s\n", count, total, localRoot)
+		return 0
+	}
+
 	local := localArg
 	if local == "" {
 		local = path.Base(rpath) // rpath normalized to '/'
@@ -169,11 +186,12 @@ func cmdGet(ctx context.Context, args []string) int {
 
 func cmdRm(ctx context.Context, args []string) int {
 	var configPath string
-	var own, shared bool
+	var own, shared, recursive bool
 	fs := newFlags("rm")
 	fs.StringVar(&configPath, "config", "", "config path")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
+	fs.BoolVar(&recursive, "r", false, "remove directories recursively")
 
 	pos, flagArgs := splitPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -213,6 +231,19 @@ func cmdRm(ctx context.Context, args []string) int {
 	}
 	if err := files.Open(ctx, sess); err != nil {
 		return fail("%v", err)
+	}
+
+	if recursive {
+		rc := 0
+		for _, rp := range rpaths {
+			rp = normalizeRemotePath(rp, m.OS)
+			if err := files.RemoveRecursive(ctx, sess, rp); err != nil {
+				rc = fail("%v", err)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "removed %s:%s (recursively)\n", host, rp)
+		}
+		return rc
 	}
 
 	// Group names by their parent directory; one batched request removes them all.

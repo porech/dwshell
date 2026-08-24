@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/porech/dwshell/internal/auth"
 )
@@ -31,6 +32,10 @@ type Session struct {
 	// most one command request in flight per session, so we do too. Transfers
 	// (Download/Upload) use a distinct request type and are not gated by this.
 	cmdMu sync.Mutex
+
+	// xfer numbers transfers so each carries a unique key (the agent rejects a
+	// reused transfer key), mirroring the client's incrementing transfer key.
+	xfer atomic.Uint64
 }
 
 // New creates a session bound to a command URL and its signing key. Call
