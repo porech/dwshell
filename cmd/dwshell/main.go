@@ -89,6 +89,9 @@ Usage:
   dwshell <host> -c "command" [flags]         Run a command and exit
   dwshell shell <host> [flags]                Explicit form (use if <host> is
                                               named like a subcommand)
+  dwshell ls <host>:<path>                    List a remote directory
+  dwshell get <host>:<remote> [local]         Download a file
+  dwshell put <local> <host>:<remote>         Upload a file
 
 Host flags:
   -c string        Run command non-interactively, capture output, exit
@@ -104,8 +107,8 @@ Global:
 
 Host name vs subcommand:
   "dwshell <host>" is a shortcut: the first argument is treated as a host unless
-  it is a known subcommand (login, logout, list, shell, version, help). If a
-  machine is actually named like one of those, use the explicit form
+  it is a known subcommand (login, logout, list, ls, get, put, shell, version,
+  help). If a machine is actually named like one of those, use the explicit form
   "dwshell shell <host>", which always treats the argument as a host
   (e.g. "dwshell shell version" connects to the host named "version").
 `
@@ -133,8 +136,14 @@ func run() int {
 		return cmdLogin(ctx, os.Args[2:])
 	case "logout":
 		return cmdLogout(ctx, os.Args[2:])
-	case "list", "ls":
+	case "list":
 		return cmdList(ctx, os.Args[2:])
+	case "ls":
+		return cmdLs(ctx, os.Args[2:])
+	case "get":
+		return cmdGet(ctx, os.Args[2:])
+	case "put":
+		return cmdPut(ctx, os.Args[2:])
 	case "shell":
 		// Explicit form: the next argument is always a host, even if it happens
 		// to be named like a subcommand (e.g. `dwshell shell version`).

@@ -430,3 +430,44 @@ token `dwshell` persists in its config (default), avoiding password re-entry.
   a shell builtin and would print an error.
 - Resize is a real SIGWINCH via `type:3`; verified (`tput cols`×`lines` matched
   the values sent).
+
+---
+
+## 8. Filesystem app
+
+The `filesystem` app runs over the same agent session as the shell: first
+`core/load_app name=filesystem` (the agent may lazily download the app on first
+use — retry once), then:
+
+### Metadata / operations (command channel)
+
+`POST <commandUrl>?request=command` with `module=filesystem`:
+
+- `list` — `parameter path=<dir>` (optional `filterList=<JSON array of names>`,
+  `filterIgnoreCase=true`). Response:
+  ```json
+  {"items":[
+     {"Name":"D:bin","LastModified":1787510458498,"Rights":"755","Owner":"root","Group":"root"},
+     {"Name":"F:hosts","LastModified":1688578959000,"Length":221,"Rights":"644","Owner":"root","Group":"root"}
+   ],
+   "permissions":{"apps":{"texteditor":{},"logwatch":{}}}}
+  ```
+  `Name` is prefixed `D:` (directory) or `F:` (file); `Length` (bytes) is present
+  for files; times are epoch ms; `Rights` is octal.
+- `makedir` — `path`, `name`.
+- `rename` — `path`, `name`, `newname`.
+- `remove` — `path`, `files` (JSON array of names).
+- `set_permissions` — `path`, `name`, `mode`, `owner`, `group`, `recursive`.
+
+### Transfers (HTTP, `_sk` query auth)
+
+Transfers authenticate with the `_sk` query parameter (not the DWS-Sec-Key
+header), and `key` is a client-generated id (no handshake):
+
+- **Download** — `GET <commandUrl>?module=filesystem&request=download&path=<urlenc(fullPath)>&key=K<n>&_sk=<sessionKey>` streams the raw file bytes.
+- **Upload** — `POST` the same URL with `request=upload` and a
+  `multipart/form-data` body whose `UPFile` field is the file content. Send a
+  `Content-Length` (buffer the body); the node's upstream rejects chunked uploads.
+
+The filesystem app has **no checksum** in its metadata and **no set-mtime**
+command; dwshell's sync plans work around both using the shell (see DESIGN.md).

@@ -131,13 +131,33 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell <host>` | Open an interactive shell. |
 | `dwshell <host> -c "cmd"` | Run a command non-interactively; exit code is propagated. |
 | `dwshell shell <host>` | Explicit form of the above. |
+| `dwshell ls <host>:<path>` | List a remote directory. |
+| `dwshell get <host>:<remote> [local]` | Download a file. |
+| `dwshell put <local> <host>:<remote>` | Upload a file. |
+
+#### File transfer
+
+`ls`, `get`, and `put` operate on the DWService filesystem app. Remote endpoints
+are written `host:path` (the split is on the first colon, so a remote Windows
+path like `GHE:C:\Users` works):
+
+```sh
+dwshell ls GHE:/etc                     # list a remote directory
+dwshell get GHE:/etc/os-release         # download into ./os-release
+dwshell get GHE:/var/log/syslog -       # download to stdout
+dwshell put ./report.pdf GHE:/tmp/      # upload (trailing / keeps the name)
+cat data | dwshell put - GHE:/tmp/data  # upload from stdin
+```
+
+Currently single files only; recursive copy and sync are planned. `--own` /
+`--shared` disambiguate the host as elsewhere.
 
 #### Host name vs subcommand
 
 `dwshell <host>` is a convenience shortcut: the first argument is treated as a
 host **unless** it exactly matches a known subcommand — `login`, `logout`,
-`list`, `shell`, `version`, or `help`. So `dwshell version` prints the version, it
-does not connect to a machine.
+`list`, `ls`, `get`, `put`, `shell`, `version`, or `help`. So `dwshell version`
+prints the version, it does not connect to a machine.
 
 If you actually have a machine named like one of those, use the explicit `shell`
 subcommand, which always treats its argument as a host:

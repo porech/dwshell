@@ -28,6 +28,40 @@ Also out of scope for v1: multiple simultaneous terminals in one session (the
 protocol allows it; the CLI exposes one) and the legacy HTTP long-poll transport
 (`simulate=true`) — we use the WebSocket.
 
+## File transfer (in progress)
+
+The DWService `filesystem` app runs over the same agent session as the shell
+(`core/load_app name=filesystem` first). See `PROTOCOL.md` for the wire details.
+
+- **Metadata / operations** reuse the command channel (`session.Execute`):
+  `list`, `makedir`, `rename`, `remove`, `set_permissions`. `list` items are
+  `{Name:"D:"|"F:"+name, LastModified(ms), Rights, Owner, Group, Length(files)}`.
+- **Transfers** use two new app-agnostic session primitives (like `OpenSocket`):
+  `session.Download` (signed GET) and `session.Upload` (signed multipart POST),
+  authenticated with the `_sk` query parameter.
+
+New package `internal/app/files` builds on these.
+
+CLI, phase 1 (single files): `dwshell ls <host>:<path>`,
+`dwshell get <host>:<remote> [local]`, `dwshell put <local> <host>:<remote>`.
+`host:path` endpoints; `--own`/`--shared` and agent-auth as for the shell.
+
+Phase 2, recursive + sync (rsync-style). Design decisions (recorded now):
+
+- The `list` metadata has **no checksum**, so change detection uses **size +
+  mtime by default** — the same as rsync's default quick check.
+- **mtime preservation** (the filesystem app has no set-mtime command):
+  - download (remote→local): set the local mtime to the item's `LastModified`
+    (`os.Chtimes`), so later comparisons are stable;
+  - upload (local→remote): the app can't set the remote mtime, so we set it
+    **via the shell** after upload — `touch -d @<epoch>` on *nix, PowerShell
+    `LastWriteTime` on Windows — best-effort.
+- Flags: `--size-only` (compare size only) and `--checksum` (verify content by
+  hashing the remote file over the **shell** — `sha256sum`/`certutil` — since the
+  protocol exposes no checksum).
+- If the shell or the needed remote tool is unavailable, mtime-set/checksum
+  **degrade gracefully to size-only with a warning**.
+
 ## Architecture principle: apps over a generic session
 
 The shell is just **one** DWService "app" running over an agent session. Login,

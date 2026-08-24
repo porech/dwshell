@@ -203,8 +203,15 @@ func (c *Client) List(ctx context.Context) ([]remote.Machine, error) {
 	return ms, nil
 }
 
-// Connect resolves a machine by name/id and opens a session to its agent.
+// Connect resolves a machine by name/id and opens a session to its agent, ready
+// to run the shell app.
 func (c *Client) Connect(ctx context.Context, query string, filter remote.Filter) (*remote.Machine, *session.Session, error) {
+	return c.ConnectApp(ctx, query, filter, "shell")
+}
+
+// ConnectApp is like Connect but checks the machine offers the given app
+// (e.g. "shell", "filesystem").
+func (c *Client) ConnectApp(ctx context.Context, query string, filter remote.Filter, app string) (*remote.Machine, *session.Session, error) {
 	sess, err := c.Session(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -220,8 +227,8 @@ func (c *Client) Connect(ctx context.Context, query string, filter remote.Filter
 	if !m.Online {
 		return m, nil, fmt.Errorf("%s is not online", m.Name)
 	}
-	if !m.SupportsShell() {
-		return m, nil, fmt.Errorf("%s does not offer the shell app", m.Name)
+	if !m.Supports(app) {
+		return m, nil, fmt.Errorf("%s does not offer the %s app", m.Name, app)
 	}
 	agentSess, err := remote.Connect(ctx, sess, m, c.http)
 	if err != nil {

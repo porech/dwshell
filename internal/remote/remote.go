@@ -54,15 +54,22 @@ type Machine struct {
 	Apps    []string // supported applications
 }
 
-// SupportsShell reports whether the machine offers the shell app.
-func (m Machine) SupportsShell() bool {
+// Supports reports whether the machine offers the given app (e.g. "shell",
+// "filesystem"). Shares report an empty app list under fullAccess = all apps.
+func (m Machine) Supports(app string) bool {
+	if len(m.Apps) == 0 {
+		return true
+	}
 	for _, a := range m.Apps {
-		if a == "shell" {
+		if a == app {
 			return true
 		}
 	}
-	return len(m.Apps) == 0 // shares report [] with fullAccess = all apps
+	return false
 }
+
+// SupportsShell reports whether the machine offers the shell app.
+func (m Machine) SupportsShell() bool { return m.Supports("shell") }
 
 type dsResponse struct {
 	Items  []dsItem `json:"items"`
