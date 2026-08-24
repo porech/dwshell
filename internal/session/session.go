@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/porech/dwshell/internal/auth"
 )
@@ -25,6 +26,11 @@ type Session struct {
 
 	customHeaders    bool
 	keepAliveSeconds int
+
+	// cmdMu serializes command-channel requests: the official client keeps at
+	// most one command request in flight per session, so we do too. Transfers
+	// (Download/Upload) use a distinct request type and are not gated by this.
+	cmdMu sync.Mutex
 }
 
 // New creates a session bound to a command URL and its signing key. Call
@@ -48,6 +54,9 @@ func (s *Session) SignKey() *auth.SignKey { return s.signKey }
 
 // Valid reports whether the session is still alive, via a keepalive probe.
 func (s *Session) Valid(ctx context.Context) bool {
+	s.cmdMu.Lock()
+	defer s.cmdMu.Unlock()
+
 	u := s.commandURL + "?request=keepalive"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
 	if err != nil {
@@ -103,6 +112,9 @@ func (s *Session) sign(req *http.Request, u string) (string, error) {
 // to ?resptype=json whose _sk is the signing key's cached initValue (reused
 // verbatim), with a DWS-Sec-Key: CHECK probe header.
 func (s *Session) Initialize(ctx context.Context) error {
+	s.cmdMu.Lock()
+	defer s.cmdMu.Unlock()
+
 	initVal, err := s.signKey.InitValue()
 	if err != nil {
 		return err
@@ -138,6 +150,9 @@ func (s *Session) Initialize(ctx context.Context) error {
 // Execute runs a single command and returns the raw payload bytes (usually JSON;
 // empty for a no-data success). params values are sent as parameter_0_<k>.
 func (s *Session) Execute(ctx context.Context, module, command string, params map[string]string) ([]byte, error) {
+	s.cmdMu.Lock()
+	defer s.cmdMu.Unlock()
+
 	form := url.Values{}
 	form.Set("count", "1")
 	form.Set("id_0", "K1")
