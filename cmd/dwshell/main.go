@@ -93,6 +93,7 @@ Usage:
   dwshell get [-r] <host>:<remote> [local]     Download a file or directory
   dwshell put [-r] <local> <host>:<remote>     Upload a file or directory
   dwshell rm [-r] <host>:<path> [<path>...]     Remove remote file(s)/dir(s)
+  dwshell sync [-n] <src> <dst>                One-way sync (one side is host:path)
 
 Host flags:
   -c string        Run command non-interactively, capture output, exit
@@ -146,6 +147,8 @@ func run() int {
 		return cmdPut(ctx, os.Args[2:])
 	case "rm":
 		return cmdRm(ctx, os.Args[2:])
+	case "sync":
+		return cmdSync(ctx, os.Args[2:])
 	case "shell":
 		// Explicit form: the next argument is always a host, even if it happens
 		// to be named like a subcommand (e.g. `dwshell shell version`).

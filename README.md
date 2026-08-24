@@ -133,6 +133,7 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell get [-r] <host>:<remote> [local]` | Download a file (or directory with `-r`). |
 | `dwshell put [-r] <local> <host>:<remote>` | Upload a file (or directory with `-r`). |
 | `dwshell rm [-r] <host>:<path> [...]` | Remove remote file(s) (directories with `-r`). |
+| `dwshell sync [-n] <src> <dst>` | One-way sync (size+mtime); one side is `host:path`. |
 | `dwshell version` | Print the version and exit. |
 | `dwshell help` | Show usage. |
 
@@ -152,10 +153,16 @@ dwshell rm GHE:/tmp/old.log GHE:/tmp/x  # remove one or more files
 dwshell put -r ./site GHE:/var/www/site # upload a directory tree
 dwshell get -r GHE:/etc/nginx ./nginx   # download a directory tree
 dwshell rm -r GHE:/tmp/build            # remove a directory tree
+dwshell sync ./site GHE:/var/www/site   # upload-sync (only changed files)
+dwshell sync -n GHE:/data ./data        # dry-run download-sync
 ```
 
-Single-file transfers plus recursive `get -r` / `put -r` / `rm -r`; an
-`rsync`-style `sync` is planned.
+Single-file transfers, recursive `get -r` / `put -r` / `rm -r`, and one-way
+`sync` (transfers only files that differ by size or mtime). `sync` takes exactly
+one `host:path` side; direction is inferred. It preserves mtimes (locally on
+download; on upload it sets the remote mtime via the shell — falling back to
+size-only when that is unavailable, e.g. on Windows remotes). `--size-only`
+compares by size only; `-n` is a dry run.
 `--own` / `--shared` disambiguate the host as elsewhere. On Windows remotes `/`
 and `\` are interchangeable.
 

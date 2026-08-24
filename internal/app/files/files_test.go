@@ -57,3 +57,31 @@ func TestJoinRemote(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestNeedsCopyTimes(t *testing.T) {
+	base := timeUnix(1000)
+	// missing destination → copy
+	if !needsCopyTimes(10, base, 0, timeUnix(0), false, false) {
+		t.Error("missing dst should copy")
+	}
+	// same size+mtime → skip
+	if needsCopyTimes(10, base, 10, base, true, false) {
+		t.Error("identical should skip")
+	}
+	// size differs → copy
+	if !needsCopyTimes(10, base, 20, base, true, false) {
+		t.Error("size diff should copy")
+	}
+	// mtime within tolerance → skip
+	if needsCopyTimes(10, base, 10, timeUnix(1001), true, false) {
+		t.Error("mtime within tolerance should skip")
+	}
+	// mtime beyond tolerance → copy
+	if !needsCopyTimes(10, base, 10, timeUnix(1010), true, false) {
+		t.Error("mtime beyond tolerance should copy")
+	}
+	// size-only ignores mtime
+	if needsCopyTimes(10, base, 10, timeUnix(9999), true, true) {
+		t.Error("size-only should ignore mtime")
+	}
+}

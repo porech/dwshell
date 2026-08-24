@@ -7,10 +7,13 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/porech/dwshell/internal/app/files"
+	"github.com/porech/dwshell/internal/app/shell"
 	"github.com/porech/dwshell/internal/client"
 	"github.com/porech/dwshell/internal/remote"
+	"github.com/porech/dwshell/internal/session"
 )
 
 // parseRemote splits a "host:path" endpoint. It splits on the first colon so
@@ -21,6 +24,20 @@ func parseRemote(s string) (host, rpath string, err error) {
 		return "", "", fmt.Errorf("expected host:path, got %q", s)
 	}
 	return s[:i], s[i+1:], nil
+}
+
+// isRemoteEndpoint reports whether s looks like a "host:path" remote endpoint
+// rather than a local path. A single-letter host followed by a separator is
+// treated as a local Windows drive (C:\dir), not a remote host.
+func isRemoteEndpoint(s string) bool {
+	i := strings.IndexByte(s, ':')
+	if i <= 0 {
+		return false
+	}
+	if i == 1 && len(s) > 2 && (s[2] == '\\' || s[2] == '/') {
+		return false // e.g. C:\Users or C:/Users → local Windows path
+	}
+	return true
 }
 
 // normalizeRemotePath makes '/' and '\' interchangeable on Windows remotes,
@@ -180,6 +197,131 @@ func cmdGet(ctx context.Context, args []string) int {
 		fmt.Fprintf(os.Stderr, "downloaded %s (%d bytes) → %s\n", rpath, n, local)
 	}
 	return 0
+}
+
+// --- sync ---
+
+func cmdSync(ctx context.Context, args []string) int {
+	var configPath string
+	var own, shared, sizeOnly, dryRun bool
+	fs := newFlags("sync")
+	fs.StringVar(&configPath, "config", "", "config path")
+	fs.BoolVar(&own, "own", false, "owned agents only")
+	fs.BoolVar(&shared, "shared", false, "incoming shares only")
+	fs.BoolVar(&sizeOnly, "size-only", false, "compare by size only (ignore mtime)")
+	fs.BoolVar(&dryRun, "n", false, "dry run: show what would change, do nothing")
+
+	pos, flagArgs := splitPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
+		return 2
+	}
+	if len(pos) != 2 {
+		return fail("usage: dwshell sync <src> <dst>  (exactly one of src/dst is host:path)")
+	}
+	src, dst := pos[0], pos[1]
+	srcR, dstR := isRemoteEndpoint(src), isRemoteEndpoint(dst)
+	if srcR == dstR {
+		return fail("exactly one of source and destination must be a host:path endpoint")
+	}
+
+	var dir files.Direction
+	var endpoint, localRoot string
+	if srcR {
+		dir, endpoint, localRoot = files.Download, src, dst
+	} else {
+		dir, endpoint, localRoot = files.Upload, dst, src
+	}
+	host, rpath, err := parseRemote(endpoint)
+	if err != nil {
+		return fail("%v", err)
+	}
+	filter, err := filterFrom(own, shared)
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	c, err := client.New(configPath)
+	if err != nil {
+		return fail("%v", err)
+	}
+	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	if err != nil {
+		return fail("%v", err)
+	}
+	if err := files.Open(ctx, sess); err != nil {
+		return fail("%v", err)
+	}
+	rpath = normalizeRemotePath(rpath, m.OS)
+
+	cfg := files.SyncConfig{
+		Direction:  dir,
+		LocalRoot:  localRoot,
+		RemoteRoot: rpath,
+		SizeOnly:   sizeOnly,
+		DryRun:     dryRun,
+		Log: func(action, p string) {
+			prefix := ""
+			if dryRun {
+				prefix = "would "
+			}
+			fmt.Fprintf(os.Stderr, "%s%s %s\n", prefix, action, p)
+		},
+	}
+	if dir == files.Upload && !sizeOnly {
+		if m.OS.IsUnix() {
+			cfg.SetRemoteMTimes = remoteMTimeSetter(sess, m, host)
+		} else {
+			fmt.Fprintln(os.Stderr, "note: cannot set mtimes on a Windows remote; comparing by size only")
+		}
+	}
+
+	st, err := files.Sync(ctx, sess, cfg)
+	if err != nil {
+		return fail("%v", err)
+	}
+	verb := "synced"
+	if dryRun {
+		verb = "would sync"
+	}
+	fmt.Fprintf(os.Stderr, "%s: %d copied, %d up-to-date, %d bytes\n", verb, st.Copied, st.Skipped, st.Bytes)
+	return 0
+}
+
+// remoteMTimeSetter returns a function that sets mtimes on *nix remote files via
+// the shell (the filesystem app has no set-mtime command). Failures are warned
+// and swallowed (best-effort), so the sync still succeeds.
+func remoteMTimeSetter(sess *session.Session, m *remote.Machine, host string) func(context.Context, map[string]time.Time) error {
+	return func(ctx context.Context, times map[string]time.Time) error {
+		var b strings.Builder
+		flush := func() error {
+			if b.Len() == 0 {
+				return nil
+			}
+			res, err := shell.Run(ctx, sess, m.OS, b.String(), 60*time.Second, localUser(), interactivePassword(localUser(), m.Name))
+			b.Reset()
+			if err != nil {
+				return err
+			}
+			if res.ExitCode != 0 {
+				return fmt.Errorf("touch exited %d", res.ExitCode)
+			}
+			return nil
+		}
+		for p, t := range times {
+			line := fmt.Sprintf("touch -c -d @%d -- '%s'; ", t.Unix(), strings.ReplaceAll(p, "'", `'\''`))
+			if b.Len()+len(line) > 60000 {
+				if err := flush(); err != nil {
+					fmt.Fprintf(os.Stderr, "note: could not set remote mtimes via shell: %v\n", err)
+					return nil
+				}
+			}
+			b.WriteString(line)
+		}
+		if err := flush(); err != nil {
+			fmt.Fprintf(os.Stderr, "note: could not set remote mtimes via shell: %v\n", err)
+		}
+		return nil
+	}
 }
 
 // --- rm ---

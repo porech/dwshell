@@ -48,3 +48,20 @@ func TestNormalizeRemotePath(t *testing.T) {
 		t.Errorf("linux: got %q", got)
 	}
 }
+
+func TestIsRemoteEndpoint(t *testing.T) {
+	cases := map[string]bool{
+		"GHE:/etc":      true,
+		"GHE:C:\\Users": true,
+		`C:\Users`:      false, // local Windows drive
+		"C:/Users":      false,
+		"/local/path":   false,
+		"./rel":         false,
+		"host:relative": true,
+	}
+	for in, want := range cases {
+		if got := isRemoteEndpoint(in); got != want {
+			t.Errorf("isRemoteEndpoint(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
