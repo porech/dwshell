@@ -58,8 +58,8 @@ type outFrame struct {
 // Open loads the shell app, opens the socket, and starts terminal 1 with the
 // given size. Output frames for that terminal are delivered on Output().
 func Open(ctx context.Context, sess *session.Session, cols, rows int) (*Shell, error) {
-	if _, err := sess.Execute(ctx, "core", "load_app", map[string]string{"name": "shell"}); err != nil {
-		return nil, fmt.Errorf("load shell app: %w", err)
+	if err := loadShellApp(ctx, sess); err != nil {
+		return nil, err
 	}
 	sock, err := sess.OpenSocket(ctx, "shell")
 	if err != nil {
@@ -83,6 +83,25 @@ func Open(ctx context.Context, sess *session.Session, cols, rows int) (*Shell, e
 	go s.readLoop()
 	go s.keepAliveLoop()
 	return s, nil
+}
+
+// loadShellApp loads the shell app on the agent. The agent may lazily download
+// the app on first use (the first probe after an agent comes online can fail with
+// "command response missing"), so a failed first load is retried once — mirroring
+// files.Open.
+func loadShellApp(ctx context.Context, sess *session.Session) error {
+	if _, err := sess.Execute(ctx, "core", "load_app", map[string]string{"name": "shell"}); err == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(1500 * time.Millisecond):
+	}
+	if _, err := sess.Execute(ctx, "core", "load_app", map[string]string{"name": "shell"}); err != nil {
+		return fmt.Errorf("load shell app: %w", err)
+	}
+	return nil
 }
 
 // Output delivers raw terminal output bytes; it is closed when the terminal ends
