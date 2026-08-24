@@ -34,3 +34,14 @@ func TestParseList(t *testing.T) {
 		t.Fatalf("bare file entry wrong: %+v", v)
 	}
 }
+
+func TestParseRemoveFailures(t *testing.T) {
+	raw := []byte(`{"items":[{"Name":"K:ok.txt"},{"Name":"E:missing.txt"},{"Name":"K:also-ok"}]}`)
+	failed := parseRemoveFailures(raw)
+	if len(failed) != 1 || failed[0] != "missing.txt" {
+		t.Fatalf("failed = %v, want [missing.txt]", failed)
+	}
+	if f := parseRemoveFailures([]byte(`{"items":[{"Name":"K:a"}]}`)); len(f) != 0 {
+		t.Fatalf("expected no failures, got %v", f)
+	}
+}

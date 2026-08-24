@@ -456,7 +456,8 @@ use — retry once), then:
   for files; times are epoch ms; `Rights` is octal.
 - `makedir` — `path`, `name`.
 - `rename` — `path`, `name`, `newname`.
-- `remove` — `path`, `files` (JSON array of names).
+- `remove` — `path`, `files` (JSON array of names). Response
+  `{"items":[{"Name":"<K|E>:<name>"}]}` — `K:` removed, `E:` failed.
 - `set_permissions` — `path`, `name`, `mode`, `owner`, `group`, `recursive`.
 
 ### Transfers (HTTP, `_sk` query auth)

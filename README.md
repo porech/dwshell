@@ -134,6 +134,7 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell ls <host>:<path>` | List a remote directory. |
 | `dwshell get <host>:<remote> [local]` | Download a file. |
 | `dwshell put <local> <host>:<remote>` | Upload a file. |
+| `dwshell rm <host>:<path> [...]` | Remove remote file(s). |
 
 #### File transfer
 
@@ -147,16 +148,18 @@ dwshell get GHE:/etc/os-release         # download into ./os-release
 dwshell get GHE:/var/log/syslog -       # download to stdout
 dwshell put ./report.pdf GHE:/tmp/      # upload (trailing / keeps the name)
 cat data | dwshell put - GHE:/tmp/data  # upload from stdin
+dwshell rm GHE:/tmp/old.log GHE:/tmp/x  # remove one or more files
 ```
 
-Currently single files only; recursive copy and sync are planned. `--own` /
-`--shared` disambiguate the host as elsewhere.
+Currently single files only; recursive copy, remove, and sync are planned.
+`--own` / `--shared` disambiguate the host as elsewhere. On Windows remotes `/`
+and `\` are interchangeable.
 
 #### Host name vs subcommand
 
 `dwshell <host>` is a convenience shortcut: the first argument is treated as a
 host **unless** it exactly matches a known subcommand — `login`, `logout`,
-`list`, `ls`, `get`, `put`, `shell`, `version`, or `help`. So `dwshell version`
+`list`, `ls`, `get`, `put`, `rm`, `shell`, `version`, or `help`. So `dwshell version`
 prints the version, it does not connect to a machine.
 
 If you actually have a machine named like one of those, use the explicit `shell`

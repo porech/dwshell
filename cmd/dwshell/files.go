@@ -165,6 +165,83 @@ func cmdGet(ctx context.Context, args []string) int {
 	return 0
 }
 
+// --- rm ---
+
+func cmdRm(ctx context.Context, args []string) int {
+	var configPath string
+	var own, shared bool
+	fs := newFlags("rm")
+	fs.StringVar(&configPath, "config", "", "config path")
+	fs.BoolVar(&own, "own", false, "owned agents only")
+	fs.BoolVar(&shared, "shared", false, "incoming shares only")
+
+	pos, flagArgs := splitPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
+		return 2
+	}
+	if len(pos) < 1 {
+		return fail("usage: dwshell rm <host>:<path> [<host>:<path>...]")
+	}
+
+	// All targets must be on the same host.
+	var host string
+	var rpaths []string
+	for _, p := range pos {
+		h, rp, err := parseRemote(p)
+		if err != nil {
+			return fail("%v", err)
+		}
+		if host == "" {
+			host = h
+		} else if h != host {
+			return fail("all paths must be on the same host (%q vs %q)", host, h)
+		}
+		rpaths = append(rpaths, rp)
+	}
+	filter, err := filterFrom(own, shared)
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	c, err := client.New(configPath)
+	if err != nil {
+		return fail("%v", err)
+	}
+	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	if err != nil {
+		return fail("%v", err)
+	}
+	if err := files.Open(ctx, sess); err != nil {
+		return fail("%v", err)
+	}
+
+	// Group names by their parent directory (one remove call per directory).
+	byDir := map[string][]string{}
+	var order []string
+	for _, rp := range rpaths {
+		rp = normalizeRemotePath(rp, m.OS)
+		dir := path.Dir(rp)
+		if !strings.HasSuffix(dir, "/") {
+			dir += "/"
+		}
+		if _, ok := byDir[dir]; !ok {
+			order = append(order, dir)
+		}
+		byDir[dir] = append(byDir[dir], path.Base(rp))
+	}
+	rc := 0
+	for _, dir := range order {
+		if err := files.Remove(ctx, sess, dir, byDir[dir]); err != nil {
+			rc = fail("%v", err)
+			continue
+		}
+		for _, n := range byDir[dir] {
+			fmt.Fprintf(os.Stderr, "removed %s:%s%s\n", host, dir, n)
+		}
+	}
+	return rc
+}
+
 // --- put ---
 
 func cmdPut(ctx context.Context, args []string) int {

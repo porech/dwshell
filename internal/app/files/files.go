@@ -96,6 +96,47 @@ func parseList(raw []byte) ([]Entry, error) {
 	return entries, nil
 }
 
+// Remove deletes one or more names inside a remote directory (dir). It does not
+// recurse into subdirectories (planned).
+func Remove(ctx context.Context, sess *session.Session, dir string, names []string) error {
+	filesJSON, err := json.Marshal(names)
+	if err != nil {
+		return err
+	}
+	raw, err := sess.Execute(ctx, module, "remove", map[string]string{
+		"path":  dir,
+		"files": string(filesJSON),
+	})
+	if err != nil {
+		return err
+	}
+	if failed := parseRemoveFailures(raw); len(failed) > 0 {
+		return fmt.Errorf("could not remove: %s", strings.Join(failed, ", "))
+	}
+	return nil
+}
+
+// parseRemoveFailures returns the names the agent could not remove. The response
+// is {"items":[{"Name":"<status>:<name>"}]} where status "K" = removed and
+// "E" = error.
+func parseRemoveFailures(raw []byte) []string {
+	var resp struct {
+		Items []struct {
+			Name string `json:"Name"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(raw, &resp) != nil {
+		return nil
+	}
+	var failed []string
+	for _, it := range resp.Items {
+		if strings.HasPrefix(it.Name, "E:") {
+			failed = append(failed, strings.TrimPrefix(it.Name, "E:"))
+		}
+	}
+	return failed
+}
+
 // Get downloads remotePath into localPath (or stdout when localPath is "-").
 func Get(ctx context.Context, sess *session.Session, remotePath, localPath string) (int64, error) {
 	rc, _, err := sess.Download(ctx, module, remotePath)
