@@ -29,13 +29,24 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Mint a short-lived installation token (scoped to the tap) from the
+      # "porech-tap-deploy" GitHub App, so pushing the Homebrew cask does not
+      # depend on any personal token.
+      - uses: actions/create-github-app-token@v2
+        id: tap-token
+        with:
+          app-id: ${{ secrets.TAP_APP_ID }}
+          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+          owner: porech
+          repositories: homebrew-tap
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}
 
   pages:
     needs: goreleaser
