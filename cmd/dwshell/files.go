@@ -203,13 +203,14 @@ func cmdGet(ctx context.Context, args []string) int {
 
 func cmdSync(ctx context.Context, args []string) int {
 	var configPath string
-	var own, shared, sizeOnly, dryRun bool
+	var own, shared, sizeOnly, dryRun, del bool
 	fs := newFlags("sync")
 	fs.StringVar(&configPath, "config", "", "config path")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 	fs.BoolVar(&sizeOnly, "size-only", false, "compare by size only (ignore mtime)")
 	fs.BoolVar(&dryRun, "n", false, "dry run: show what would change, do nothing")
+	fs.BoolVar(&del, "delete", false, "delete destination entries not in the source")
 
 	pos, flagArgs := splitPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -259,6 +260,7 @@ func cmdSync(ctx context.Context, args []string) int {
 		RemoteRoot: rpath,
 		SizeOnly:   sizeOnly,
 		DryRun:     dryRun,
+		Delete:     del,
 		Log: func(action, p string) {
 			prefix := ""
 			if dryRun {
@@ -283,7 +285,8 @@ func cmdSync(ctx context.Context, args []string) int {
 	if dryRun {
 		verb = "would sync"
 	}
-	fmt.Fprintf(os.Stderr, "%s: %d copied, %d up-to-date, %d bytes\n", verb, st.Copied, st.Skipped, st.Bytes)
+	fmt.Fprintf(os.Stderr, "%s: %d copied, %d up-to-date, %d deleted, %d bytes\n",
+		verb, st.Copied, st.Skipped, st.Deleted, st.Bytes)
 	return 0
 }
 

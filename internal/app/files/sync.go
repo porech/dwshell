@@ -31,6 +31,7 @@ type SyncConfig struct {
 	RemoteRoot string
 	SizeOnly   bool
 	DryRun     bool
+	Delete     bool // remove destination entries not present in the source
 
 	// SetRemoteMTimes, if non-nil, sets mtimes on remote files after an upload
 	// (the filesystem app has no set-mtime command, so this is done via the
@@ -46,6 +47,7 @@ type SyncConfig struct {
 type SyncStats struct {
 	Copied  int
 	Skipped int
+	Deleted int
 	Bytes   int64
 }
 
@@ -115,9 +117,9 @@ func Sync(ctx context.Context, sess *session.Session, cfg SyncConfig) (SyncStats
 	}
 
 	if cfg.Direction == Upload {
-		return syncUpload(ctx, sess, cfg, sizeOnly, localIndex, localDirs, remoteIndex)
+		return syncUpload(ctx, sess, cfg, sizeOnly, localIndex, localDirs, remoteIndex, remoteDirs)
 	}
-	return syncDownload(ctx, sess, cfg, sizeOnly, remoteIndex, remoteDirs, localIndex)
+	return syncDownload(ctx, sess, cfg, sizeOnly, remoteIndex, remoteDirs, localIndex, localDirs)
 }
 
 func remoteRel(root, full string) string {
@@ -153,7 +155,7 @@ func needsCopyTimes(srcSize int64, srcMod time.Time, dstSize int64, dstMod time.
 }
 
 func syncUpload(ctx context.Context, sess *session.Session, cfg SyncConfig, sizeOnly bool,
-	local map[string]localFile, localDirs map[string]bool, remote map[string]Entry) (SyncStats, error) {
+	local map[string]localFile, localDirs map[string]bool, remote map[string]Entry, remoteDirs map[string]bool) (SyncStats, error) {
 	var st SyncStats
 	remoteRoot := strings.TrimRight(cfg.RemoteRoot, "/")
 
@@ -202,11 +204,34 @@ func syncUpload(ctx context.Context, sess *session.Session, cfg SyncConfig, size
 			return st, fmt.Errorf("set remote mtimes: %w", err)
 		}
 	}
+
+	if cfg.Delete {
+		var extra []string
+		for rel := range remote {
+			if _, ok := local[rel]; !ok {
+				extra = append(extra, remoteRoot+"/"+rel)
+			}
+		}
+		for rel := range remoteDirs {
+			if !localDirs[rel] {
+				extra = append(extra, remoteRoot+"/"+rel)
+			}
+		}
+		for _, full := range extra {
+			cfg.log("delete", remoteRel(remoteRoot, full))
+		}
+		if !cfg.DryRun && len(extra) > 0 {
+			if err := deleteRemotePaths(ctx, sess, extra); err != nil {
+				return st, err
+			}
+		}
+		st.Deleted = len(extra)
+	}
 	return st, nil
 }
 
 func syncDownload(ctx context.Context, sess *session.Session, cfg SyncConfig, sizeOnly bool,
-	remote map[string]Entry, remoteDirs map[string]bool, local map[string]localFile) (SyncStats, error) {
+	remote map[string]Entry, remoteDirs map[string]bool, local map[string]localFile, localDirs map[string]bool) (SyncStats, error) {
 	var st SyncStats
 
 	if !cfg.DryRun {
@@ -247,7 +272,70 @@ func syncDownload(ctx context.Context, sess *session.Session, cfg SyncConfig, si
 		st.Copied++
 		st.Bytes += n
 	}
+
+	if cfg.Delete {
+		var extraFiles, extraDirs []string
+		for rel := range local {
+			if _, ok := remote[rel]; !ok {
+				extraFiles = append(extraFiles, rel)
+			}
+		}
+		for rel := range localDirs {
+			if !remoteDirs[rel] {
+				extraDirs = append(extraDirs, rel)
+			}
+		}
+		for _, rel := range append(append([]string{}, extraFiles...), extraDirs...) {
+			cfg.log("delete", rel)
+		}
+		st.Deleted = len(extraFiles) + len(extraDirs)
+		if !cfg.DryRun {
+			for _, rel := range extraFiles {
+				if err := os.Remove(filepath.Join(cfg.LocalRoot, filepath.FromSlash(rel))); err != nil {
+					return st, err
+				}
+			}
+			// Remove now-empty extraneous dirs deepest-first.
+			sort.Slice(extraDirs, func(i, j int) bool {
+				return strings.Count(extraDirs[i], "/") > strings.Count(extraDirs[j], "/")
+			})
+			for _, rel := range extraDirs {
+				_ = os.Remove(filepath.Join(cfg.LocalRoot, filepath.FromSlash(rel)))
+			}
+		}
+	}
 	return st, nil
+}
+
+// deleteRemotePaths removes remote full paths deepest-first, batched per depth.
+func deleteRemotePaths(ctx context.Context, sess *session.Session, fulls []string) error {
+	sort.Slice(fulls, func(i, j int) bool {
+		return strings.Count(fulls[i], "/") > strings.Count(fulls[j], "/")
+	})
+	i := 0
+	for i < len(fulls) {
+		depth := strings.Count(fulls[i], "/")
+		byDir := map[string][]string{}
+		var order []string
+		for i < len(fulls) && strings.Count(fulls[i], "/") == depth {
+			p := fulls[i]
+			dir := p[:strings.LastIndexByte(p, '/')+1]
+			base := p[strings.LastIndexByte(p, '/')+1:]
+			if _, ok := byDir[dir]; !ok {
+				order = append(order, dir)
+			}
+			byDir[dir] = append(byDir[dir], base)
+			i++
+		}
+		groups := make([]RemoveGroup, len(order))
+		for j, dir := range order {
+			groups[j] = RemoveGroup{Dir: dir, Names: byDir[dir]}
+		}
+		if err := RemoveMany(ctx, sess, groups); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // sortedKeys returns the map keys sorted; lexical order places parent paths

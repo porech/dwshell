@@ -133,7 +133,7 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell get [-r] <host>:<remote> [local]` | Download a file (or directory with `-r`). |
 | `dwshell put [-r] <local> <host>:<remote>` | Upload a file (or directory with `-r`). |
 | `dwshell rm [-r] <host>:<path> [...]` | Remove remote file(s) (directories with `-r`). |
-| `dwshell sync [-n] <src> <dst>` | One-way sync (size+mtime); one side is `host:path`. |
+| `dwshell sync [-n] [--delete] <src> <dst>` | One-way sync (size+mtime); one side is `host:path`. |
 | `dwshell version` | Print the version and exit. |
 | `dwshell help` | Show usage. |
 
@@ -162,7 +162,8 @@ Single-file transfers, recursive `get -r` / `put -r` / `rm -r`, and one-way
 one `host:path` side; direction is inferred. It preserves mtimes (locally on
 download; on upload it sets the remote mtime via the shell — falling back to
 size-only when that is unavailable, e.g. on Windows remotes). `--size-only`
-compares by size only; `-n` is a dry run.
+compares by size only; `--delete` removes destination entries missing from
+the source; `-n` is a dry run.
 `--own` / `--shared` disambiguate the host as elsewhere. On Windows remotes `/`
 and `\` are interchangeable.
 
