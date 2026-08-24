@@ -20,7 +20,13 @@ cp "$keydir/dwshell.rsa.pub" "$base/dwshell.rsa.pub"
 map_arch() { case "$1" in *amd64*) echo x86_64 ;; *arm64*) echo aarch64 ;; *) echo "" ;; esac; }
 for f in "$apk_dir"/*.apk; do
   a="$(map_arch "$f")"; [ -n "$a" ] || continue
-  mkdir -p "$base/$a"; cp "$f" "$base/$a/"
+  mkdir -p "$base/$a"
+  # apk fetches packages as <pkgname>-<pkgver>.apk, so name the file that way
+  # (goreleaser names them dwshell_<ver>_<os>_<arch>.apk, which apk can't resolve).
+  info="$(tar -xzOf "$f" .PKGINFO 2>/dev/null)"
+  name="$(printf '%s\n' "$info" | awk -F' = ' '/^pkgname/{print $2; exit}')"
+  ver="$(printf '%s\n' "$info" | awk -F' = ' '/^pkgver/{print $2; exit}')"
+  cp "$f" "$base/$a/${name}-${ver}.apk"
 done
 for d in "$base"/*/; do
   [ -d "$d" ] || continue
