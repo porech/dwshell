@@ -203,7 +203,7 @@ func cmdGet(ctx context.Context, args []string) int {
 
 func cmdSync(ctx context.Context, args []string) int {
 	var configPath string
-	var own, shared, sizeOnly, dryRun, del bool
+	var own, shared, sizeOnly, dryRun, del, checksum bool
 	fs := newFlags("sync")
 	fs.StringVar(&configPath, "config", "", "config path")
 	fs.BoolVar(&own, "own", false, "owned agents only")
@@ -211,6 +211,7 @@ func cmdSync(ctx context.Context, args []string) int {
 	fs.BoolVar(&sizeOnly, "size-only", false, "compare by size only (ignore mtime)")
 	fs.BoolVar(&dryRun, "n", false, "dry run: show what would change, do nothing")
 	fs.BoolVar(&del, "delete", false, "delete destination entries not in the source")
+	fs.BoolVar(&checksum, "checksum", false, "compare by SHA-256 content hash")
 
 	pos, flagArgs := splitPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -269,11 +270,19 @@ func cmdSync(ctx context.Context, args []string) int {
 			fmt.Fprintf(os.Stderr, "%s%s %s\n", prefix, action, p)
 		},
 	}
-	if dir == files.Upload && !sizeOnly {
+	if dir == files.Upload && !sizeOnly && !checksum {
 		if m.OS.IsUnix() {
 			cfg.SetRemoteMTimes = remoteMTimeSetter(sess, m, host)
 		} else {
 			fmt.Fprintln(os.Stderr, "note: cannot set mtimes on a Windows remote; comparing by size only")
+		}
+	}
+	if checksum {
+		if m.OS.IsUnix() {
+			cfg.Checksum = true
+			cfg.RemoteHashes = remoteHasher(sess, m)
+		} else {
+			fmt.Fprintln(os.Stderr, "note: --checksum needs sha256sum on the remote (unavailable on Windows); using size+mtime")
 		}
 	}
 
@@ -324,6 +333,52 @@ func remoteMTimeSetter(sess *session.Session, m *remote.Machine, host string) fu
 			fmt.Fprintf(os.Stderr, "note: could not set remote mtimes via shell: %v\n", err)
 		}
 		return nil
+	}
+}
+
+// remoteHasher returns a function that computes SHA-256 hashes of remote files
+// via the shell (`sha256sum`), for `sync --checksum` on *nix remotes.
+func remoteHasher(sess *session.Session, m *remote.Machine) func(context.Context, []string) (map[string]string, error) {
+	return func(ctx context.Context, paths []string) (map[string]string, error) {
+		out := map[string]string{}
+		var b strings.Builder
+		run := func() error {
+			if b.Len() == 0 {
+				return nil
+			}
+			cmd := "sha256sum -- " + b.String()
+			b.Reset()
+			res, err := shell.Run(ctx, sess, m.OS, cmd, 300*time.Second, localUser(), interactivePassword(localUser(), m.Name))
+			if err != nil {
+				return err
+			}
+			for _, line := range strings.Split(string(res.Output), "\n") {
+				line = strings.TrimRight(line, "\r")
+				i := strings.IndexByte(line, ' ')
+				if i <= 0 {
+					continue
+				}
+				hash := line[:i]
+				name := strings.TrimLeft(line[i:], " *")
+				if name != "" {
+					out[name] = hash
+				}
+			}
+			return nil
+		}
+		for _, p := range paths {
+			arg := "'" + strings.ReplaceAll(p, "'", `'\''`) + "' "
+			if b.Len()+len(arg) > 60000 {
+				if err := run(); err != nil {
+					return nil, err
+				}
+			}
+			b.WriteString(arg)
+		}
+		if err := run(); err != nil {
+			return nil, err
+		}
+		return out, nil
 	}
 }
 

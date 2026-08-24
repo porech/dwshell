@@ -93,7 +93,7 @@ Usage:
   dwshell get [-r] <host>:<remote> [local]     Download a file or directory
   dwshell put [-r] <local> <host>:<remote>     Upload a file or directory
   dwshell rm [-r] <host>:<path> [<path>...]     Remove remote file(s)/dir(s)
-  dwshell sync [-n] [--delete] <src> <dst>     One-way sync (one side is host:path)
+  dwshell sync [-n] [--delete] [--checksum] <src> <dst>   One-way sync
 
 Host flags:
   -c string        Run command non-interactively, capture output, exit

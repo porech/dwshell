@@ -2,7 +2,10 @@ package files
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -32,6 +35,12 @@ type SyncConfig struct {
 	SizeOnly   bool
 	DryRun     bool
 	Delete     bool // remove destination entries not present in the source
+	Checksum   bool // compare by content hash instead of size+mtime
+
+	// RemoteHashes returns SHA-256 hex hashes for the given remote full paths
+	// (computed via the shell). Required for Checksum; when nil, Checksum falls
+	// back to size+mtime.
+	RemoteHashes func(ctx context.Context, fullPaths []string) (map[string]string, error)
 
 	// SetRemoteMTimes, if non-nil, sets mtimes on remote files after an upload
 	// (the filesystem app has no set-mtime command, so this is done via the
@@ -116,10 +125,79 @@ func Sync(ctx context.Context, sess *session.Session, cfg SyncConfig) (SyncStats
 		return SyncStats{}, fmt.Errorf("local source %q is not a directory", cfg.LocalRoot)
 	}
 
-	if cfg.Direction == Upload {
-		return syncUpload(ctx, sess, cfg, sizeOnly, localIndex, localDirs, remoteIndex, remoteDirs)
+	// For --checksum, precompute which same-size pairs actually differ by hash.
+	var differs map[string]bool
+	if cfg.Checksum {
+		if cfg.RemoteHashes == nil {
+			cfg.Checksum = false // no remote hasher available → size+mtime
+		} else {
+			differs, err = checksumDiffs(ctx, cfg, localIndex, remoteIndex)
+			if err != nil {
+				return SyncStats{}, err
+			}
+		}
 	}
-	return syncDownload(ctx, sess, cfg, sizeOnly, remoteIndex, remoteDirs, localIndex, localDirs)
+
+	if cfg.Direction == Upload {
+		return syncUpload(ctx, sess, cfg, sizeOnly, differs, localIndex, localDirs, remoteIndex, remoteDirs)
+	}
+	return syncDownload(ctx, sess, cfg, sizeOnly, differs, remoteIndex, remoteDirs, localIndex, localDirs)
+}
+
+// checksumDiffs hashes same-size file pairs on both sides and returns rel → true
+// when the contents differ. Files that differ in size (or are missing) are not
+// included; the caller copies those regardless.
+func checksumDiffs(ctx context.Context, cfg SyncConfig, local map[string]localFile, remote map[string]Entry) (map[string]bool, error) {
+	remoteRoot := strings.TrimRight(cfg.RemoteRoot, "/")
+	var sameSize []string
+	var remotePaths []string
+	for rel, lf := range local {
+		if re, ok := remote[rel]; ok && re.Size == lf.size {
+			sameSize = append(sameSize, rel)
+			remotePaths = append(remotePaths, remoteRoot+"/"+rel)
+		}
+	}
+	differs := map[string]bool{}
+	if len(sameSize) == 0 {
+		return differs, nil
+	}
+	rhash, err := cfg.RemoteHashes(ctx, remotePaths)
+	if err != nil {
+		return nil, err
+	}
+	for _, rel := range sameSize {
+		lh, err := sha256File(filepath.Join(cfg.LocalRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			return nil, err
+		}
+		differs[rel] = !strings.EqualFold(lh, rhash[remoteRoot+"/"+rel])
+	}
+	return differs, nil
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// shouldCopy decides whether a source file must be transferred.
+func shouldCopy(cfg SyncConfig, sizeOnly bool, differs map[string]bool, rel string,
+	srcSize, dstSize int64, srcMod, dstMod time.Time, dstOK bool) bool {
+	if cfg.Checksum {
+		if !dstOK || srcSize != dstSize {
+			return true
+		}
+		return differs[rel]
+	}
+	return needsCopyTimes(srcSize, srcMod, dstSize, dstMod, dstOK, sizeOnly)
 }
 
 func remoteRel(root, full string) string {
@@ -131,10 +209,6 @@ func (c SyncConfig) log(action, path string) {
 	if c.Log != nil {
 		c.Log(action, path)
 	}
-}
-
-func needsCopy(srcSize int64, srcMod time.Time, dst Entry, dstOK, sizeOnly bool) bool {
-	return needsCopyTimes(srcSize, srcMod, dst.Size, dst.ModTime, dstOK, sizeOnly)
 }
 
 func needsCopyTimes(srcSize int64, srcMod time.Time, dstSize int64, dstMod time.Time, dstOK, sizeOnly bool) bool {
@@ -154,7 +228,7 @@ func needsCopyTimes(srcSize int64, srcMod time.Time, dstSize int64, dstMod time.
 	return diff > mtimeTolerance
 }
 
-func syncUpload(ctx context.Context, sess *session.Session, cfg SyncConfig, sizeOnly bool,
+func syncUpload(ctx context.Context, sess *session.Session, cfg SyncConfig, sizeOnly bool, differs map[string]bool,
 	local map[string]localFile, localDirs map[string]bool, remote map[string]Entry, remoteDirs map[string]bool) (SyncStats, error) {
 	var st SyncStats
 	remoteRoot := strings.TrimRight(cfg.RemoteRoot, "/")
@@ -175,7 +249,7 @@ func syncUpload(ctx context.Context, sess *session.Session, cfg SyncConfig, size
 	for _, rel := range sortedKeys(local) {
 		lf := local[rel]
 		dst, ok := remote[rel]
-		if !needsCopy(lf.size, lf.modTime, dst, ok, sizeOnly) {
+		if !shouldCopy(cfg, sizeOnly, differs, rel, lf.size, dst.Size, lf.modTime, dst.ModTime, ok) {
 			st.Skipped++
 			continue
 		}
@@ -230,7 +304,7 @@ func syncUpload(ctx context.Context, sess *session.Session, cfg SyncConfig, size
 	return st, nil
 }
 
-func syncDownload(ctx context.Context, sess *session.Session, cfg SyncConfig, sizeOnly bool,
+func syncDownload(ctx context.Context, sess *session.Session, cfg SyncConfig, sizeOnly bool, differs map[string]bool,
 	remote map[string]Entry, remoteDirs map[string]bool, local map[string]localFile, localDirs map[string]bool) (SyncStats, error) {
 	var st SyncStats
 
@@ -249,7 +323,7 @@ func syncDownload(ctx context.Context, sess *session.Session, cfg SyncConfig, si
 	for _, rel := range sortedKeys(remote) {
 		re := remote[rel]
 		lf, ok := local[rel]
-		if !needsCopyTimes(re.Size, re.ModTime, lf.size, lf.modTime, ok, sizeOnly) {
+		if !shouldCopy(cfg, sizeOnly, differs, rel, re.Size, lf.size, re.ModTime, lf.modTime, ok) {
 			st.Skipped++
 			continue
 		}
