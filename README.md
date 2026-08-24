@@ -39,7 +39,31 @@ terminal, the way I would with SSH. That's what this tool is for.
 
 `dwshell` is a single self-contained binary (pure Go, no cgo). Pick one:
 
-### Download a pre-built binary (recommended)
+### Package managers (recommended)
+
+**Homebrew (macOS & Linux)**
+
+```sh
+brew install porech/tap/dwshell
+```
+
+**Debian / Ubuntu (APT)**, **Fedora / RHEL / CentOS (DNF)**, **Alpine (APK)**:
+signed repositories are hosted at
+**<https://porech.github.io/dwshell/dist/>** — that page has copy-paste setup for
+each. For example, APT:
+
+```sh
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://porech.github.io/dwshell/dist/apt/key.asc | sudo tee /etc/apt/keyrings/dwshell.asc >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/dwshell.asc] https://porech.github.io/dwshell/dist/apt ./" | sudo tee /etc/apt/sources.list.d/dwshell.list
+sudo apt update && sudo apt install dwshell
+```
+
+> The Homebrew tap is pushed by CI using a token seeded from a maintainer
+> account; it is meant to be replaced with a dedicated fine-grained PAT
+> (contents:write on `porech/homebrew-tap` only).
+
+### Download a pre-built binary
 
 Get the archive for your OS/arch from the **[latest release](https://github.com/porech/dwshell/releases/latest)**
 (Linux/macOS/Windows, amd64/arm64), extract it, and put the `dwshell` binary on
