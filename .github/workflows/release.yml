@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: pages-${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   test:
     uses: ./.github/workflows/ci.yml # gofmt, vet, build, race tests — must pass first
@@ -31,3 +35,69 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+  pages:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install repo tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq apt-utils dpkg-dev createrepo-c rpm gnupg
+
+      - name: Download release packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p pkgs
+          gh release download "${{ github.ref_name }}" -R "${{ github.repository }}" \
+            --pattern '*.deb' --pattern '*.rpm' --pattern '*.apk' --dir pkgs
+          ls -l pkgs
+
+      - name: Import GPG signing key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "GPG_FPR=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')" >> "$GITHUB_ENV"
+
+      - name: Write APK RSA key
+        run: |
+          install -m 700 -d "$HOME/keys"
+          printf '%s' "${{ secrets.APK_RSA_PRIVATE_KEY }}" > "$HOME/keys/dwshell-apk.rsa"
+          chmod 600 "$HOME/keys/dwshell-apk.rsa"
+          openssl rsa -in "$HOME/keys/dwshell-apk.rsa" -pubout -out "$HOME/keys/dwshell-apk.rsa.pub"
+
+      - name: Build APT repo
+        run: scripts/pages/build-apt.sh pkgs site
+
+      - name: Build YUM repo
+        run: scripts/pages/build-yum.sh pkgs site
+
+      - name: Build APK repo (Alpine container, apk-tools 2.x)
+        run: |
+          docker run --rm \
+            -v "$PWD/pkgs:/pkgs" -v "$PWD/site:/site" \
+            -v "$HOME/keys/dwshell-apk.rsa:/key.rsa" \
+            -v "$HOME/keys/dwshell-apk.rsa.pub:/key.rsa.pub" \
+            -v "$PWD/scripts/pages/build-apk.sh:/build-apk.sh" \
+            alpine:3.20 sh -c "apk add --no-cache abuild openssl >/dev/null && sh /build-apk.sh /pkgs /site /key.rsa"
+          sudo chown -R "$USER" site
+
+      - name: Render landing pages
+        run: scripts/pages/render-index.sh site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
