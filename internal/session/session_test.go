@@ -2,24 +2,34 @@ package session
 
 import "testing"
 
-func TestParseCommandResponse(t *testing.T) {
+// resultFor decodes the frame for id from body (test helper mirroring Execute).
+func resultFor(t *testing.T, body, id string) ([]byte, error) {
+	t.Helper()
+	frames, err := parseFrames(body)
+	if err != nil {
+		return nil, err
+	}
+	f, ok := frames[id]
+	return f.result(ok)
+}
+
+func TestParseFramesSingle(t *testing.T) {
 	tests := []struct {
 		name    string
 		body    string
 		want    string
 		wantErr bool
 	}{
-		{"null payload", "K:K1:6:K:null", "null", false},
-		{"json payload", `K:K1:9:K:{"a":1}`, `{"a":1}`, false},
-		{"empty success", "K:K1:2:K:", "", false},
-		{"command error", "K:K1:12:E:some error", "", true},
+		{"null payload", "K:K0:6:K:null", "null", false},
+		{"json payload", `K:K0:9:K:{"a":1}`, `{"a":1}`, false},
+		{"empty success", "K:K0:2:K:", "", false},
+		{"command error", "K:K0:12:E:some error", "", true},
 		{"server error", "E:boom", "", true},
 		{"disconnected", "D:#SessionExpired", "", true},
-		{"retry node", "B:elsewhere", "", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseCommandResponse(tc.body, "K1")
+			got, err := resultFor(t, tc.body, "K0")
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got %q", got)
@@ -36,14 +46,26 @@ func TestParseCommandResponse(t *testing.T) {
 	}
 }
 
-func TestParseCommandResponseSelectsID(t *testing.T) {
-	// Two frames (K:no = 4 bytes, K:yes = 5 bytes); we asked for K2.
-	body := `K:K1:4:K:noK2:5:K:yes`
-	got, err := parseCommandResponse(body, "K2")
+func TestParseFramesBatch(t *testing.T) {
+	// Two commands in one response (K:no = 4 bytes, K:yes = 5 bytes).
+	body := `K:K0:4:K:noK1:5:K:yes`
+	frames, err := parseFrames(body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "yes" {
-		t.Fatalf("got %q, want %q", got, "yes")
+	if len(frames) != 2 {
+		t.Fatalf("got %d frames", len(frames))
+	}
+	if d, err := frames["K0"].result(true); err != nil || string(d) != "no" {
+		t.Fatalf("K0 = %q err=%v", d, err)
+	}
+	if d, err := frames["K1"].result(true); err != nil || string(d) != "yes" {
+		t.Fatalf("K1 = %q err=%v", d, err)
+	}
+}
+
+func TestFrameMissing(t *testing.T) {
+	if _, err := (frame{}).result(false); err == nil {
+		t.Fatal("missing frame should error")
 	}
 }

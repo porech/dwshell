@@ -96,21 +96,49 @@ func parseList(raw []byte) ([]Entry, error) {
 	return entries, nil
 }
 
-// Remove deletes one or more names inside a remote directory (dir). It does not
+// RemoveGroup is a set of file names to remove from one directory.
+type RemoveGroup struct {
+	Dir   string
+	Names []string
+}
+
+// Remove deletes one or more names inside a single remote directory. It does not
 // recurse into subdirectories (planned).
 func Remove(ctx context.Context, sess *session.Session, dir string, names []string) error {
-	filesJSON, err := json.Marshal(names)
+	return RemoveMany(ctx, sess, []RemoveGroup{{Dir: dir, Names: names}})
+}
+
+// RemoveMany removes several directory groups in one batched request. It returns
+// an error listing every name that could not be removed.
+func RemoveMany(ctx context.Context, sess *session.Session, groups []RemoveGroup) error {
+	if len(groups) == 0 {
+		return nil
+	}
+	cmds := make([]session.Command, len(groups))
+	for i, g := range groups {
+		filesJSON, err := json.Marshal(g.Names)
+		if err != nil {
+			return err
+		}
+		cmds[i] = session.Command{
+			Module:  module,
+			Command: "remove",
+			Params:  map[string]string{"path": g.Dir, "files": string(filesJSON)},
+		}
+	}
+	results, err := sess.ExecuteBatch(ctx, cmds)
 	if err != nil {
 		return err
 	}
-	raw, err := sess.Execute(ctx, module, "remove", map[string]string{
-		"path":  dir,
-		"files": string(filesJSON),
-	})
-	if err != nil {
-		return err
+	var failed []string
+	for i, r := range results {
+		if r.Err != nil {
+			failed = append(failed, groups[i].Names...) // whole command failed
+			continue
+		}
+		failed = append(failed, parseRemoveFailures(r.Data)...)
 	}
-	if failed := parseRemoveFailures(raw); len(failed) > 0 {
+	if len(failed) > 0 {
 		return fmt.Errorf("could not remove: %s", strings.Join(failed, ", "))
 	}
 	return nil

@@ -147,19 +147,51 @@ func (s *Session) Initialize(ctx context.Context) error {
 	return nil
 }
 
+// Command is one request in a batched Execute.
+type Command struct {
+	Module  string
+	Command string
+	Params  map[string]string
+}
+
+// Result is the per-command outcome from a batched Execute.
+type Result struct {
+	Data []byte
+	Err  error
+}
+
 // Execute runs a single command and returns the raw payload bytes (usually JSON;
-// empty for a no-data success). params values are sent as parameter_0_<k>.
+// empty for a no-data success).
 func (s *Session) Execute(ctx context.Context, module, command string, params map[string]string) ([]byte, error) {
+	res, err := s.ExecuteBatch(ctx, []Command{{Module: module, Command: command, Params: params}})
+	if err != nil {
+		return nil, err
+	}
+	return res[0].Data, res[0].Err
+}
+
+// ExecuteBatch runs several commands in one request (`count=N`), matching the
+// official client, and returns a per-command Result. A returned error is a
+// transport/session-level failure; per-command errors are in each Result.
+func (s *Session) ExecuteBatch(ctx context.Context, cmds []Command) ([]Result, error) {
+	if len(cmds) == 0 {
+		return nil, nil
+	}
 	s.cmdMu.Lock()
 	defer s.cmdMu.Unlock()
 
 	form := url.Values{}
-	form.Set("count", "1")
-	form.Set("id_0", "K1")
-	form.Set("module_0", module)
-	form.Set("command_0", command)
-	for k, v := range params {
-		form.Set("parameter_0_"+k, v)
+	form.Set("count", strconv.Itoa(len(cmds)))
+	ids := make([]string, len(cmds))
+	for i, c := range cmds {
+		id := "K" + strconv.Itoa(i)
+		ids[i] = id
+		form.Set("id_"+strconv.Itoa(i), id)
+		form.Set("module_"+strconv.Itoa(i), c.Module)
+		form.Set("command_"+strconv.Itoa(i), c.Command)
+		for k, v := range c.Params {
+			form.Set(fmt.Sprintf("parameter_%d_%s", i, k), v)
+		}
 	}
 
 	u := s.commandURL + "?request=command"
@@ -172,25 +204,56 @@ func (s *Session) Execute(ctx context.Context, module, command string, params ma
 	if err != nil {
 		return nil, err
 	}
-	req.URL, err = url.Parse(signedURL)
-	if err != nil {
+	if req.URL, err = url.Parse(signedURL); err != nil {
 		return nil, err
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("command %s/%s: %w", module, command, err)
+		return nil, fmt.Errorf("command request: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	return parseCommandResponse(string(body), "K1")
+
+	frames, err := parseFrames(string(body))
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Result, len(cmds))
+	for i, id := range ids {
+		f, ok := frames[id]
+		results[i].Data, results[i].Err = f.result(ok)
+	}
+	return results, nil
 }
 
-// parseCommandResponse decodes the framed command response (PROTOCOL.md §3),
-// returning the payload for the given command id.
-func parseCommandResponse(body, wantID string) ([]byte, error) {
+// frame is one decoded command response entry.
+type frame struct {
+	status byte
+	data   string
+}
+
+func (f frame) result(found bool) ([]byte, error) {
+	if !found {
+		return nil, fmt.Errorf("command response missing")
+	}
+	switch f.status {
+	case 'K':
+		return []byte(f.data), nil
+	case 'E':
+		return nil, fmt.Errorf("command error: %s", f.data)
+	case 'P', 'W':
+		return nil, fmt.Errorf("command deferred (password/wait required)")
+	default:
+		return nil, fmt.Errorf("unexpected command status %q", f.status)
+	}
+}
+
+// parseFrames decodes a framed command response (PROTOCOL.md §3) into a map of
+// command id → frame. A leading E/D/B status is a session-level error.
+func parseFrames(body string) (map[string]frame, error) {
 	if body == "" {
 		return nil, fmt.Errorf("empty response")
 	}
@@ -207,8 +270,8 @@ func parseCommandResponse(body, wantID string) ([]byte, error) {
 		return nil, fmt.Errorf("unexpected response status %q", body[0])
 	}
 
-	// Entries: <cmdId>:<len>:<payload> starting at index 2.
-	i := 2
+	frames := map[string]frame{}
+	i := 2 // skip "<S>:"
 	for i < len(body) {
 		c := strings.IndexByte(body[i:], ':')
 		if c < 0 {
@@ -230,29 +293,16 @@ func parseCommandResponse(body, wantID string) ([]byte, error) {
 		}
 		payload := body[i : i+n]
 		i += n
-		if id != wantID {
+		if len(payload) < 1 {
 			continue
 		}
-		if len(payload) < 1 {
-			return nil, fmt.Errorf("empty payload frame")
-		}
-		inner := payload[0]
-		data := ""
+		fr := frame{status: payload[0]}
 		if len(payload) >= 2 {
-			data = payload[2:] // skip "<inner>:"
+			fr.data = payload[2:] // skip "<inner>:"
 		}
-		switch inner {
-		case 'K':
-			return []byte(data), nil
-		case 'E':
-			return nil, fmt.Errorf("command error: %s", data)
-		case 'P', 'W':
-			return nil, fmt.Errorf("command deferred (password/wait required)")
-		default:
-			return nil, fmt.Errorf("unexpected command status %q", inner)
-		}
+		frames[id] = fr
 	}
-	return nil, fmt.Errorf("command id %q not found in response", wantID)
+	return frames, nil
 }
 
 func trimStatus(body string) string {

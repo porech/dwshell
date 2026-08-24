@@ -215,7 +215,7 @@ func cmdRm(ctx context.Context, args []string) int {
 		return fail("%v", err)
 	}
 
-	// Group names by their parent directory (one remove call per directory).
+	// Group names by their parent directory; one batched request removes them all.
 	byDir := map[string][]string{}
 	var order []string
 	for _, rp := range rpaths {
@@ -229,17 +229,19 @@ func cmdRm(ctx context.Context, args []string) int {
 		}
 		byDir[dir] = append(byDir[dir], path.Base(rp))
 	}
-	rc := 0
+	groups := make([]files.RemoveGroup, len(order))
+	for i, dir := range order {
+		groups[i] = files.RemoveGroup{Dir: dir, Names: byDir[dir]}
+	}
+	if err := files.RemoveMany(ctx, sess, groups); err != nil {
+		return fail("%v", err)
+	}
 	for _, dir := range order {
-		if err := files.Remove(ctx, sess, dir, byDir[dir]); err != nil {
-			rc = fail("%v", err)
-			continue
-		}
 		for _, n := range byDir[dir] {
 			fmt.Fprintf(os.Stderr, "removed %s:%s%s\n", host, dir, n)
 		}
 	}
-	return rc
+	return 0
 }
 
 // --- put ---
