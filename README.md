@@ -59,10 +59,6 @@ echo "deb [signed-by=/etc/apt/keyrings/dwshell.asc] https://porech.github.io/dws
 sudo apt update && sudo apt install dwshell
 ```
 
-> The Homebrew tap is pushed by CI using a token seeded from a maintainer
-> account; it is meant to be replaced with a dedicated fine-grained PAT
-> (contents:write on `porech/homebrew-tap` only).
-
 ### Download a pre-built binary
 
 Get the archive for your OS/arch from the **[latest release](https://github.com/porech/dwshell/releases/latest)**
