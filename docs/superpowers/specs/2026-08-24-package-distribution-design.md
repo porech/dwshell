@@ -136,6 +136,20 @@ GitHub App, so CI does not depend on a personal token's lifetime.
 - After the first real tag: install end-to-end in throwaway containers
   (debian, fedora, alpine) and via `brew install` on macOS.
 
+## Implementation notes (deviations found during build)
+
+- **Homebrew**: goreleaser 2.18 deprecated `brews` in favor of `homebrew_casks`
+  (Homebrew prefers casks for pre-built binaries). Implemented as a cask with
+  `binaries: [dwshell]` and a postflight `xattr -dr com.apple.quarantine` hook
+  (the binary is unsigned). Tap path unchanged: `brew install porech/tap/dwshell`.
+- **GPG key**: generated as RSA-4096 (not ed25519) for broad RPM-signing
+  compatibility on older distros.
+- **APK**: `alpine:latest` now ships apk-tools 3.x, which rejects nfpm's apk v2
+  packages as `UNTRUSTED` (exit 99). The APK repo is built in a pinned
+  `alpine:3.20` container (apk-tools 2.14), and `apk index --allow-untrusted`
+  is used — repo trust comes from the `abuild-sign`ed APKINDEX, not the packages'
+  internal signature. The published public key is `dwshell.rsa.pub`.
+
 ## Out of scope (for now)
 
 - Arch/AUR (declined).
