@@ -59,9 +59,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install wixl
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq wixl
-
       - name: Download the Windows amd64 archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -70,11 +67,13 @@ jobs:
             --pattern 'dwshell_*_windows_amd64.zip' --dir .
           unzip -o dwshell_*_windows_amd64.zip dwshell.exe
 
-      - name: Build the MSI
+      - name: Build the MSI (Fedora container — msitools/wixl with Environment support)
         run: |
           ver="${GITHUB_REF_NAME#v}"
           cp packaging/windows/dwshell.wxs .
-          wixl -a x64 -D Version="$ver" -o "dwshell_${ver}_windows_amd64.msi" dwshell.wxs
+          docker run --rm -v "$PWD:/w" -w /w fedora:latest sh -c \
+            "dnf install -y -q msitools >/dev/null && wixl -a x64 -D Version='$ver' -o 'dwshell_${ver}_windows_amd64.msi' dwshell.wxs"
+          sudo chown "$USER" dwshell_*_windows_amd64.msi
           ls -l dwshell_*_windows_amd64.msi
 
       - name: Upload the MSI to the release
