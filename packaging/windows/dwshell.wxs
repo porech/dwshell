@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Per-machine MSI installer for the dwshell CLI. Installs the binary into
+     Program Files, appends its folder to the system PATH, and registers an
+     uninstall entry. Built with wixl (msitools); version injected at build time:
+     wixl -D Version=x.y.z -a x64 -o dwshell.msi dwshell.wxs -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Name="dwshell" Manufacturer="porech" Id="*"
+           UpgradeCode="604947AF-EFA2-45E4-A7C6-07DC78073779"
+           Language="1033" Codepage="1252" Version="$(var.Version)">
+
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"
+             Comments="dwshell — SSH-style remote shell and file transfer over DWService" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of dwshell is already installed." />
+    <Media Id="1" Cabinet="dwshell.cab" EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/porech/dwshell" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/porech/dwshell" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="dwshell">
+          <Component Id="dwshellExe" Guid="726C231E-B449-45EA-AA23-FA68F4B71C25" Win64="yes">
+            <File Id="dwshellExe" Source="dwshell.exe" KeyPath="yes" />
+            <!-- Append the install dir to the system PATH (per-machine). -->
+            <Environment Id="PathEntry" Name="PATH" Value="[INSTALLDIR]"
+                         Permanent="no" Part="last" Action="set" System="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Main" Title="dwshell" Level="1">
+      <ComponentRef Id="dwshellExe" />
+    </Feature>
+  </Product>
+</Wix>
