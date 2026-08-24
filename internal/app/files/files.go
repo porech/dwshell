@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -163,6 +164,23 @@ func parseRemoveFailures(raw []byte) []string {
 		}
 	}
 	return failed
+}
+
+// Mkdir creates the remote directory fullPath. An "already exists" error is
+// treated as success so it is idempotent.
+func Mkdir(ctx context.Context, sess *session.Session, fullPath string) error {
+	dir := path.Dir(fullPath)
+	if !strings.HasSuffix(dir, "/") {
+		dir += "/"
+	}
+	_, err := sess.Execute(ctx, module, "makedir", map[string]string{
+		"path": dir,
+		"name": path.Base(fullPath),
+	})
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "exist") {
+		return nil
+	}
+	return err
 }
 
 // Get downloads remotePath into localPath (or stdout when localPath is "-").

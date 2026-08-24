@@ -279,11 +279,12 @@ func cmdRm(ctx context.Context, args []string) int {
 
 func cmdPut(ctx context.Context, args []string) int {
 	var configPath string
-	var own, shared bool
+	var own, shared, recursive bool
 	fs := newFlags("put")
 	fs.StringVar(&configPath, "config", "", "config path")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
+	fs.BoolVar(&recursive, "r", false, "upload a directory recursively")
 
 	pos, flagArgs := splitPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -314,6 +315,18 @@ func cmdPut(ctx context.Context, args []string) int {
 		return fail("%v", err)
 	}
 	rpath = normalizeRemotePath(rpath, m.OS)
+
+	if recursive {
+		if local == "-" {
+			return fail("cannot use -r with stdin")
+		}
+		count, total, err := files.PutRecursive(ctx, sess, local, rpath)
+		if err != nil {
+			return fail("%v", err)
+		}
+		fmt.Fprintf(os.Stderr, "uploaded %d files (%d bytes) → %s:%s\n", count, total, host, rpath)
+		return 0
+	}
 
 	// If the remote ends with '/', treat it as a directory and append the base.
 	if strings.HasSuffix(rpath, "/") {

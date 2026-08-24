@@ -113,6 +113,39 @@ func GetRecursive(ctx context.Context, sess *session.Session, remoteRoot, localR
 	return count, total, nil
 }
 
+// PutRecursive uploads the local tree at localRoot into remoteRoot (which mirrors
+// localRoot: remoteRoot/<rel> for each entry). Returns files and bytes uploaded.
+func PutRecursive(ctx context.Context, sess *session.Session, localRoot, remoteRoot string) (int, int64, error) {
+	remoteRoot = strings.TrimRight(remoteRoot, "/")
+	var count int
+	var total int64
+	err := filepath.WalkDir(localRoot, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(localRoot, p)
+		if err != nil {
+			return err
+		}
+		remote := remoteRoot
+		if rel != "." {
+			remote = remoteRoot + "/" + filepath.ToSlash(rel)
+		}
+		if d.IsDir() {
+			// WalkDir visits parents before children, so dirs are created in order.
+			return Mkdir(ctx, sess, remote)
+		}
+		n, err := Put(ctx, sess, p, remote)
+		if err != nil {
+			return fmt.Errorf("put %s: %w", p, err)
+		}
+		count++
+		total += n
+		return nil
+	})
+	return count, total, err
+}
+
 // RemoveRecursive deletes the remote tree at root (including root). Files and
 // directories are removed deepest-first, batched per depth level.
 func RemoveRecursive(ctx context.Context, sess *session.Session, root string) error {

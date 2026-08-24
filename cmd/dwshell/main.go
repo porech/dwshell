@@ -91,7 +91,7 @@ Usage:
                                               named like a subcommand)
   dwshell ls <host>:<path>                    List a remote directory
   dwshell get [-r] <host>:<remote> [local]     Download a file or directory
-  dwshell put <local> <host>:<remote>         Upload a file
+  dwshell put [-r] <local> <host>:<remote>     Upload a file or directory
   dwshell rm [-r] <host>:<path> [<path>...]     Remove remote file(s)/dir(s)
 
 Host flags:

@@ -131,7 +131,7 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell shell <host>` | Explicit form of the above. |
 | `dwshell ls <host>:<path>` | List a remote directory. |
 | `dwshell get [-r] <host>:<remote> [local]` | Download a file (or directory with `-r`). |
-| `dwshell put <local> <host>:<remote>` | Upload a file. |
+| `dwshell put [-r] <local> <host>:<remote>` | Upload a file (or directory with `-r`). |
 | `dwshell rm [-r] <host>:<path> [...]` | Remove remote file(s) (directories with `-r`). |
 | `dwshell version` | Print the version and exit. |
 | `dwshell help` | Show usage. |
@@ -149,12 +149,13 @@ dwshell get GHE:/var/log/syslog -       # download to stdout
 dwshell put ./report.pdf GHE:/tmp/      # upload (trailing / keeps the name)
 cat data | dwshell put - GHE:/tmp/data  # upload from stdin
 dwshell rm GHE:/tmp/old.log GHE:/tmp/x  # remove one or more files
+dwshell put -r ./site GHE:/var/www/site # upload a directory tree
 dwshell get -r GHE:/etc/nginx ./nginx   # download a directory tree
 dwshell rm -r GHE:/tmp/build            # remove a directory tree
 ```
 
-Single-file `get`/`put`, plus recursive `get -r` and `rm -r` (upload `put -r`
-and `rsync`-style sync are planned).
+Single-file transfers plus recursive `get -r` / `put -r` / `rm -r`; an
+`rsync`-style `sync` is planned.
 `--own` / `--shared` disambiguate the host as elsewhere. On Windows remotes `/`
 and `\` are interchangeable.
 
