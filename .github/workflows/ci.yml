@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call: # reused by the release workflow so a tag can't ship failing tests
 
 permissions:
   contents: read
