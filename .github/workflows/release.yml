@@ -71,8 +71,19 @@ jobs:
         run: |
           ver="${GITHUB_REF_NAME#v}"
           cp packaging/windows/dwshell.wxs .
-          docker run --rm -v "$PWD:/w" -w /w fedora:latest sh -c \
-            "dnf install -y -q msitools >/dev/null && wixl -a x64 -D Version='$ver' -o 'dwshell_${ver}_windows_amd64.msi' dwshell.wxs"
+          # wixl builds the MSI but can't emit the "remove on uninstall" flag for
+          # the PATH entry, so we rewrite the Environment Name to "=-*PATH"
+          # (append on install, remove on uninstall) with msibuild afterwards.
+          docker run --rm -v "$PWD:/w" -w /w fedora:latest sh -c '
+            set -e
+            dnf install -y -q msitools >/dev/null
+            msi="dwshell_'"$ver"'_windows_amd64.msi"
+            wixl -a x64 -D Version="'"$ver"'" -o "$msi" dwshell.wxs
+            msiinfo export "$msi" Environment > env.idt
+            awk -F"\t" "BEGIN{OFS=\"\t\"} NR>3{\$2=\"=-*PATH\"} {print}" env.idt > env2.idt
+            msibuild "$msi" -i env2.idt
+            echo "Environment row after patch:"; msiinfo export "$msi" Environment | sed -n "4p"
+          '
           sudo chown "$USER" dwshell_*_windows_amd64.msi
           ls -l dwshell_*_windows_amd64.msi
 

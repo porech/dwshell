@@ -22,7 +22,10 @@
         <Directory Id="INSTALLDIR" Name="dwshell">
           <Component Id="dwshellExe" Guid="726C231E-B449-45EA-AA23-FA68F4B71C25" Win64="yes">
             <File Id="dwshellExe" Source="dwshell.exe" KeyPath="yes" />
-            <!-- Append the install dir to the system PATH (per-machine). -->
+            <!-- Append the install dir to the system PATH (per-machine).
+                 wixl does not emit the MSI "remove on uninstall" flag, so the
+                 build pipeline rewrites this row's Name to "=-*PATH" afterwards
+                 (append on install, remove on uninstall) — see the msi job. -->
             <Environment Id="PathEntry" Name="PATH" Value="[INSTALLDIR]"
                          Permanent="no" Part="last" Action="set" System="yes" />
           </Component>
