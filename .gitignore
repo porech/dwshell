@@ -16,3 +16,6 @@
 *.key
 *.pem
 dwshell-keys/
+
+# goreleaser build output
+/dist/
