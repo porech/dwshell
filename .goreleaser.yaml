@@ -35,6 +35,52 @@ archives:
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
+nfpms:
+  - id: packages
+    package_name: dwshell
+    ids:
+      - dwshell
+    vendor: porech
+    homepage: https://github.com/porech/dwshell
+    maintainer: Alessandro Rinaldi <ale-rinaldi@users.noreply.github.com>
+    description: |-
+      SSH-style remote shell and file transfer over DWService.
+      Opens a shell on remote DWService agents and moves files to/from them.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    section: utils
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/dwshell/LICENSE
+      - src: README.md
+        dst: /usr/share/doc/dwshell/README.md
+
+homebrew_casks:
+  - name: dwshell
+    binaries:
+      - dwshell
+    repository:
+      owner: porech
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/porech/dwshell
+    description: SSH-style remote shell and file transfer over DWService
+    commit_author:
+      name: goreleaser-bot
+      email: noreply@github.com
+    # The binary is unsigned, so strip the Gatekeeper quarantine bit on install.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dwshell"]
+          end
+
 checksum:
   name_template: checksums.txt
 
