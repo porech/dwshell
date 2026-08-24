@@ -59,6 +59,22 @@ echo "deb [signed-by=/etc/apt/keyrings/dwshell.asc] https://porech.github.io/dws
 sudo apt update && sudo apt install dwshell
 ```
 
+**Windows (Scoop)**
+
+```powershell
+scoop bucket add porech https://github.com/porech/scoop-bucket
+scoop install dwshell
+```
+
+**Windows (MSI installer)**
+
+Prefer a double-click installer? Download `dwshell_<version>_windows_amd64.msi`
+from the **[latest release](https://github.com/porech/dwshell/releases/latest)**
+and run it — it installs to `Program Files`, adds `dwshell` to your `PATH`, and
+registers an uninstall entry. Since the installer is not code-signed, Windows
+SmartScreen may warn "Windows protected your PC" — click **More info → Run
+anyway**.
+
 ### Download a pre-built binary
 
 Get the archive for your OS/arch from the **[latest release](https://github.com/porech/dwshell/releases/latest)**
