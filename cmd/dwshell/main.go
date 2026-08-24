@@ -406,6 +406,13 @@ func nonInteractivePassword(user, host string) shell.PasswordFunc {
 }
 
 func interactive(ctx context.Context, sess *session.Session, m *remote.Machine, username string, userExplicit bool, termValue string, noTerm bool) int {
+	if m.OS == remote.OSWindows {
+		// Print the disconnect hint before the shell connects: a Windows agent
+		// clears the screen on start, which cleanly resyncs the terminal. Printing
+		// the hint after the prompt is drawn instead would desync the local cursor
+		// from the remote PTY and corrupt the display.
+		fmt.Fprintln(os.Stderr, "dwshell: type ~. on a fresh line to disconnect (a Windows shell won't report 'exit').")
+	}
 	cols, rows := term.Size()
 	sh, err := shell.Open(ctx, sess, cols, rows)
 	if err != nil {
@@ -435,12 +442,6 @@ func interactive(ctx context.Context, sess *session.Session, m *remote.Machine, 
 		}
 		// Set TERM and clear the screen via raw ANSI (no terminfo dependency).
 		_ = sh.Input("export TERM=" + tv + "; printf '\\033[H\\033[2J'\r")
-	}
-
-	if m.OS == remote.OSWindows {
-		// A Windows agent never reports the shell's exit, so `exit` can't close
-		// the session; the local "~." escape is the way out.
-		fmt.Fprint(os.Stderr, "\r\ndwshell: type ~. on a fresh line to disconnect (a Windows shell won't report 'exit').\r\n")
 	}
 
 	if err := term.Bridge(ctx, sh); err != nil && !isInterrupt(err) {
