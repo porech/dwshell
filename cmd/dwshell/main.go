@@ -440,8 +440,9 @@ func interactive(ctx context.Context, sess *session.Session, m *remote.Machine, 
 		if tv == "" {
 			tv = "xterm-256color"
 		}
-		// Set TERM and clear the screen via raw ANSI (no terminfo dependency).
-		_ = sh.Input("export TERM=" + tv + "; printf '\\033[H\\033[2J'\r")
+		// Set TERM (SSH-like). We don't clear the screen — the export command is
+		// left visible, like a login shell echoing its startup.
+		_ = sh.Input("export TERM=" + tv + "\r")
 	}
 
 	if err := term.Bridge(ctx, sh); err != nil && !isInterrupt(err) {
