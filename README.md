@@ -259,7 +259,10 @@ pass, and an existing configuration is carried over the first time dwshell saves
 anything.
 
 ```sh
-$ dwshell login --user info@example.com     # the email is the account's identity
+$ dwshell login                             # the email is the account's identity
+User (email) [ale@example.net]: info@example.com
+Password: …
+
 $ dwshell account list
 ale@example.net  (default)
 info@example.com
@@ -268,6 +271,11 @@ $ dwshell list                              # the default account
 $ dwshell list --account info@example.com   # the other one
 $ DWSHELL_ACCOUNT=info@example.com dwshell list      # for a whole session
 ```
+
+`login` asks which email to use, offering the account you already have: press
+Enter to refresh it, or type another to register a second. `--user` answers the
+question up front, and without a terminal — a script — the default account is
+used and nothing is asked.
 
 The first account you log in with becomes the default; change it with
 `dwshell account default <email>`. Logging in again with an email already
