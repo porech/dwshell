@@ -40,3 +40,20 @@ func TestInstallInstructionsNeverGiveADownloadAndRunLine(t *testing.T) {
 		t.Error("must never hand out the undashed code")
 	}
 }
+
+// Automation must not be able to delete a machine by accident.
+func TestConfirmRefusesWithoutATerminal(t *testing.T) {
+	err := confirm("delete agent \"x\"?", false, false)
+	if err == nil {
+		t.Fatal("with no terminal and no --yes it must refuse")
+	}
+	if !strings.Contains(err.Error(), "--yes") {
+		t.Errorf("the error should name --yes, got %q", err)
+	}
+}
+
+func TestConfirmPassesWithYes(t *testing.T) {
+	if err := confirm("delete agent \"x\"?", true, false); err != nil {
+		t.Fatalf("--yes must proceed without a terminal: %v", err)
+	}
+}
