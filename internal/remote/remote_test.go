@@ -70,3 +70,28 @@ func TestSupportsShell(t *testing.T) {
 		t.Fatal("empty apps (share full access) should allow shell")
 	}
 }
+
+// A created-but-uninstalled agent arrives as state "W" with a code and a null
+// osType; dwshell rendered that as "Linux offline", wrong on both counts.
+func TestPendingAgentIsNotJustOffline(t *testing.T) {
+	m := machineFromAgent(dsItem{Name: "probe", ID: "A1", State: "W", TempCode: 281407902})
+	if !m.Pending {
+		t.Error("an agent in state W is pending installation")
+	}
+	if m.Online {
+		t.Error("a pending agent is not online")
+	}
+	if m.InstallCode != 281407902 {
+		t.Errorf("InstallCode = %d, want 281407902", m.InstallCode)
+	}
+}
+
+func TestInstalledAgentIsNotPending(t *testing.T) {
+	m := machineFromAgent(dsItem{Name: "GHE", ID: "A2", State: "N", OsType: 0})
+	if m.Pending || m.InstallCode != 0 {
+		t.Errorf("got Pending=%v InstallCode=%d", m.Pending, m.InstallCode)
+	}
+	if !m.Online {
+		t.Error("state N is online")
+	}
+}

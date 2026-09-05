@@ -52,6 +52,13 @@ type Machine struct {
 	Owner   string   // share owner display name
 	Group   string   // optional group label
 	Apps    []string // supported applications
+
+	// Pending is an agent created but never installed. The service reports it
+	// as state "W" with a null osType, so it is neither online nor meaningfully
+	// typed — it is waiting for someone to run the installer with InstallCode.
+	Pending     bool
+	InstallCode int    // installation code; set only while Pending
+	IDGroup     string // group id, for moving the agent between groups
 }
 
 // Supports reports whether the machine offers the given app (e.g. "shell",
@@ -82,6 +89,8 @@ type dsItem struct {
 	OsType                int    `json:"osType"`
 	AgentOsType           int    `json:"agentOsType"`
 	State                 string `json:"state"`
+	TempCode              int    `json:"tempCode"` // installation code, only while state is "W"
+	IDGroup               string `json:"idGroup"`
 	SupportedApplications string `json:"supportedApplications"`
 	Group                 string `json:"group"`
 	// share-only
@@ -92,6 +101,24 @@ type dsItem struct {
 		FullAccess   bool     `json:"fullAccess"`
 		Applications []string `json:"applications"`
 	} `json:"permissions"`
+}
+
+// machineFromAgent maps one owned-agent record. State "N" is online; "W" is
+// created but not yet installed, which callers show as pending rather than as
+// an ordinary offline machine, since such an agent carries a code and has no
+// reported OS yet.
+func machineFromAgent(it dsItem) Machine {
+	return Machine{
+		Name:        it.Name,
+		ID:          it.ID,
+		OS:          OS(it.OsType),
+		Online:      it.State == "N",
+		Pending:     it.State == "W",
+		InstallCode: it.TempCode,
+		Group:       it.Group,
+		IDGroup:     it.IDGroup,
+		Apps:        splitApps(it.SupportedApplications),
+	}
 }
 
 // List returns owned agents followed by incoming shares.
@@ -107,14 +134,7 @@ func List(ctx context.Context, s *session.Session) ([]Machine, error) {
 		return nil, fmt.Errorf("parse agents: %w", err)
 	}
 	for _, it := range agents.Items {
-		machines = append(machines, Machine{
-			Name:   it.Name,
-			ID:     it.ID,
-			OS:     OS(it.OsType),
-			Online: it.State == "N",
-			Group:  it.Group,
-			Apps:   splitApps(it.SupportedApplications),
-		})
+		machines = append(machines, machineFromAgent(it))
 	}
 
 	sharesRaw, err := s.Execute(ctx, "share", "datasource", map[string]string{
