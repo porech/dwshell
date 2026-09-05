@@ -237,10 +237,6 @@ account's trusted device, and each asking for confirmation unless you pass
 `--yes`. Remove the default and, if a single account is left, it takes over; if
 several remain, dwshell asks you to pick one rather than choosing for you.
 
-Flags follow their subcommand — `dwshell list --account …`, not
-`dwshell --account … list` — except in the shell shortcut, where
-`dwshell --account … myserver` works too.
-
 #### Agent name vs subcommand
 
 `dwshell <agent>` is a convenience shortcut: the first argument is treated as an
