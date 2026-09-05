@@ -65,6 +65,13 @@ The create payload is `{idGroup, name, description}`, matching the browser
 client. **The commit response returns the created item, `tempCode` included**,
 so creation and code retrieval are one round trip.
 
+`tempCode` is a JSON **number** (`281407902`), but it is never shown or typed
+that way. The client renders it in groups of three — `281-407-902` — and the
+installer passes the code through with only whitespace removed, keeping the
+dashes, so the dashed form is what the service expects. Being a number on the
+wire, a leading zero could not survive, so dwshell pads to nine digits before
+grouping.
+
 Groups use the identical shape on `module=group` with `{name, description}`.
 
 ### Regenerating a code
@@ -84,27 +91,38 @@ installation to it. The `user=`/`password=` path, which creates the agent during
 installation, is deliberately unused — it would put account credentials on the
 target machine, which is exactly what a single-use code avoids.
 
-Download URLs, verified reachable (HTTP 200):
+### dwshell does not download the installer, and does not tell you to
 
-| target | installer |
-|---|---|
-| Linux, macOS | `https://www.dwservice.net/download/dwagent.sh` (1.78 MB) |
-| Windows | `https://www.dwservice.net/download/dwagent.exe` (2.0 MB) — one binary; there is no `_x64` variant |
+The download page carries the acceptance of the licence:
 
-So the unattended line is, in substance:
+> By selecting the 'Download' button I accept the Terms and Conditions and the
+> Restrictive Terms and Conditions.
+
+A `curl … | sh` one-liner would be more convenient and would route around that
+acceptance. So `agent create` prints **the download page**, not a direct file
+URL, and a run line that assumes the installer is already on the machine:
 
 ```
-# Linux / macOS, as root
-curl -fsSL -o dwagent.sh https://www.dwservice.net/download/dwagent.sh && sh dwagent.sh -silent key=<tempCode>
+Installation code: 281-407-902
+
+1. Download the agent on the target machine (accepting the licence):
+   https://www.dwservice.net/download.html
+
+2. Run the unattended setup there:
+   Linux / macOS:  sudo sh dwagent.sh -silent key=281-407-902
+   Windows:        dwagent.exe -silent key=281-407-902
 ```
+
+The direct file URLs are known and verified (`download/dwagent.sh`,
+`download/dwagent.exe`, both HTTP 200; there is no `_x64` variant) and are
+deliberately **not** printed.
 
 Silent mode forces a real installation — it disables the installer's
 "run without installing" path — so the command installs and registers a service.
 `uninstall` is the reverse, which the macOS verification in §8 relies on.
 
-`dwshell agent create` prints these lines for Linux and Windows alongside the
-raw code. Their exact final form is settled by the live verification in §8:
-nothing is printed that has not been run, except where §9 says otherwise.
+The exact run lines are settled by the live verification in §8: nothing is
+printed that has not been run, except where §9 says otherwise.
 
 ## 5. Command surface
 
@@ -180,17 +198,18 @@ Live verification, since the whole point is an installation that really works:
 - **Linux** — ephemeral Docker container, silent install with a real code, agent
   confirmed online, container destroyed.
 - **macOS** — this workstation, installed then uninstalled.
-- **Windows** — see §9.
+- **Windows** — deferred; see §9.
 
 ## 9. Open questions
 
-1. **Windows verification.** No Windows machine is available: the owned Windows
-   agents are offline and the online ones are shares. A QEMU VM is possible in
-   principle — the host has the aarch64 UEFI firmware and Windows 11 Arm64 ISOs
-   are published, so it would be HVF-accelerated rather than emulated — but the
+1. **Windows verification is deferred.** Linux and macOS are validated first and
+   the Windows run line ships marked as derived from the installer's source, not
+   executed. No Windows machine is available: the owned Windows agents are
+   offline and the online ones are shares. A QEMU VM is possible in principle —
+   the host has the aarch64 UEFI firmware and Windows 11 Arm64 ISOs are
+   published, so it would be HVF-accelerated rather than emulated — but the
    workstation's disk is 98% full, with 25.7 GB free against an ISO plus an
-   installation. Either free roughly 40 GB, supply a machine, or ship the
-   Windows line marked as verified from the installer's source only.
+   installation. Freeing roughly 40 GB, or supplying a machine, would close it.
 2. **The commit wire format is derived from the client's code, not observed.**
    Every field is read from `mod_ui_datasource.js` and the manager packages, and
    no agent was created while establishing it. First implementation step is to
