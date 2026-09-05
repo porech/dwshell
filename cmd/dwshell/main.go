@@ -277,14 +277,20 @@ func cmdList(ctx context.Context, args []string) int {
 	}
 	for _, m := range machines {
 		state := "offline"
-		if m.Online {
+		os := m.OS.String()
+		switch {
+		case m.Online:
 			state = "online"
+		case m.Pending:
+			// Created but never installed: it is waiting for the installer, and
+			// the service has not reported an OS for it yet.
+			state, os = "pending", ""
 		}
 		kind := "own"
 		if m.Shared {
 			kind = "shared"
 		}
-		fmt.Printf("%-24s %-8s %-7s %-7s %s\n", m.Name, m.OS, state, kind, m.ID)
+		fmt.Printf("%-24s %-8s %-7s %-7s %s\n", m.Name, os, state, kind, m.ID)
 	}
 	return 0
 }
