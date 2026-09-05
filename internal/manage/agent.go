@@ -2,6 +2,7 @@ package manage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
@@ -57,4 +58,61 @@ func CreateAgent(ctx context.Context, ex Executor, name, description, idGroup st
 		return nil, fmt.Errorf("the service accepted the agent but returned no record, so there is no installation code to show")
 	}
 	return agentFromItem(items[0]), nil
+}
+
+// DeleteAgent removes an agent from the account. The service wants the record's
+// id under both keys it uses internally.
+func DeleteAgent(ctx context.Context, ex Executor, id string) error {
+	_, err := commit(ctx, ex, "agent", []change{{
+		Operation: "delete", Index: 0, Item: item{"_id": id, "id": id},
+	}})
+	return err
+}
+
+// ReinstallAgent puts an installed agent back into "pending installation" with
+// a fresh code, invalidating the previous one. The command answers with a bare
+// acknowledgement, so read the new code from the listing afterwards.
+func ReinstallAgent(ctx context.Context, ex Executor, id string) error {
+	_, err := ex.Execute(ctx, "agent", "reinstall", map[string]string{"id": id})
+	return err
+}
+
+// loadAgentItem reads one agent's full record, with its position in the
+// listing. Both are needed to update it: the service rejects a change carrying
+// only the altered fields, answering java.lang.NullPointerException, so the
+// whole record has to travel — which is what the browser client sends, since it
+// merges the edit into the item it loaded.
+func loadAgentItem(ctx context.Context, ex Executor, agentID string) (item, int, error) {
+	raw, err := ex.Execute(ctx, "agent", "datasource", map[string]string{"operation": "load"})
+	if err != nil {
+		return nil, 0, fmt.Errorf("load agents: %w", err)
+	}
+	var res struct {
+		Items []item `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, 0, fmt.Errorf("parse agents: %w", err)
+	}
+	for i, it := range res.Items {
+		if it["id"] == agentID || it["_id"] == agentID {
+			return it, i, nil
+		}
+	}
+	return nil, 0, fmt.Errorf("agent %s is not in the account listing", agentID)
+}
+
+// SetAgentGroup moves an agent into a group, or out of every group when idGroup
+// is empty. The record is read back first because the service wants the whole
+// item, not just the field being changed.
+func SetAgentGroup(ctx context.Context, ex Executor, agentID, idGroup string) error {
+	it, idx, err := loadAgentItem(ctx, ex, agentID)
+	if err != nil {
+		return err
+	}
+	it["idGroup"] = nil
+	if idGroup != "" {
+		it["idGroup"] = idGroup
+	}
+	_, err = commit(ctx, ex, "agent", []change{{Operation: "update", Index: idx, Item: it}})
+	return err
 }
