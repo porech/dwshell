@@ -160,7 +160,7 @@ the session without any of this. To supply a code non-interactively, see
 | Command | Description |
 |---|---|
 | `dwshell login [--user U] [--no-trusted]` | Authenticate and persist the session (and, by default, a trusted device). |
-| `dwshell logout [--all]` | Deregister the trusted device and forget local credentials. |
+| `dwshell logout [--all]` | Forget the selected account's credentials, deregistering its trusted device (`--all` for every account). |
 | `dwshell account list\|default\|rm` | Manage accounts, once you log in with more than one. |
 | `dwshell list [--json]` | List machines with OS, online state, and owned/shared. |
 | `dwshell <agent>` | Open an interactive shell. |
@@ -230,6 +230,9 @@ asks for it:
      https://www.dwservice.net/download.html
 ```
 
+`agent create` also takes `--description <text>` and `--group <name>`, the group
+being one that already exists.
+
 The code is then read back with `dwshell agent code web-01` for as long as the
 machine has not been installed — `dwshell list` shows such an agent as
 `pending`. `dwshell agent reinstall` mints a new one and invalidates the old.
@@ -278,9 +281,9 @@ several remain, dwshell asks you to pick one rather than choosing for you.
 
 #### Agent name vs subcommand
 
-`dwshell <agent>` is a convenience shortcut: the first argument is treated as an
-agent **unless** it exactly matches one of the subcommands in the
-[Commands](#commands) table above. So `dwshell version` prints the version, it
+`dwshell <agent>` is a convenience shortcut: the first argument that is not a
+flag (or a flag's value) is treated as an agent **unless** it exactly matches one
+of the subcommands in the [Commands](#commands) table above. So `dwshell version` prints the version, it
 does not connect to a machine.
 
 If you actually have a machine named like one of those, use the explicit `shell`
@@ -328,7 +331,16 @@ DWSHELL_REMOTE_PASSWORD=… dwshell alice@myserver -c "id"
 - `--no-term` — do not send a TERM to the remote.
 - `--timeout <dur>` — command timeout for `-c` (default: none; e.g. `30s`, `5m`).
 - `--config <path>` — config file location.
-- `--json` — machine-readable `list` output.
+- `--account <email>` — which account to use, when more than one is logged in
+  (see [More than one account](#more-than-one-account)).
+- `--json` — machine-readable output, on `list`, `account list` and the
+  `agent` commands.
+- `--yes` — skip the confirmation on `agent rm`, `agent reinstall` and
+  `account rm`. Required when there is no terminal.
+
+Flags may be written anywhere on the line: `dwshell list --account a@b` and
+`dwshell --account a@b list` are the same command. Everything after a bare `--`
+is a positional, for an agent or path that begins with a dash.
 
 ### Environment variables
 
@@ -338,6 +350,8 @@ DWSHELL_REMOTE_PASSWORD=… dwshell alice@myserver -c "id"
 - `DWSHELL_REMOTE_PASSWORD` — remote OS password when the agent requires shell
   authentication (used by `-c`, and by interactive before the first prompt).
 - `DWSHELL_CONFIG` — override the config file path.
+- `DWSHELL_ACCOUNT` — which account to use, for a whole shell session or script;
+  `--account` overrides it.
 
 Passwords are never read from command-line arguments.
 
