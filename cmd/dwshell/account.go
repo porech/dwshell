@@ -15,18 +15,21 @@ import (
 // who log in with more than one account. With a single account there is nothing
 // here worth running.
 func cmdAccount(ctx context.Context, args []string) int {
-	if len(args) == 0 {
+	// The verb is the first positional, so flags may sit on either side of it.
+	flagArgs, pos := partitionArgs(args)
+	if len(pos) == 0 {
 		return fail("usage: dwshell account <list|default|rm>")
 	}
-	switch args[0] {
+	rest := append(append([]string{}, flagArgs...), pos[1:]...)
+	switch pos[0] {
 	case "list":
-		return cmdAccountList(args[1:])
+		return cmdAccountList(rest)
 	case "default":
-		return cmdAccountDefault(args[1:])
+		return cmdAccountDefault(rest)
 	case "rm":
-		return cmdAccountRemove(ctx, args[1:])
+		return cmdAccountRemove(ctx, rest)
 	default:
-		return fail("unknown account subcommand %q", args[0])
+		return fail("unknown account subcommand %q", pos[0])
 	}
 }
 
@@ -42,7 +45,8 @@ func cmdAccountList(args []string) int {
 	asJSON := false
 	fs.StringVar(&configPath, "config", "", "config file path")
 	fs.BoolVar(&asJSON, "json", false, "machine-readable output")
-	if err := fs.Parse(args); err != nil {
+	flagArgs, _ := partitionArgs(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
 	cfg, err := config.Load(configPath)
@@ -80,23 +84,24 @@ func cmdAccountDefault(args []string) int {
 	fs := newFlags("account default")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "config file path")
-	if err := fs.Parse(args); err != nil {
+	flagArgs, pos := partitionArgs(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 {
+	if len(pos) != 1 {
 		return fail("usage: dwshell account default <email>")
 	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fail("%v", err)
 	}
-	if err := cfg.SetDefault(fs.Arg(0)); err != nil {
+	if err := cfg.SetDefault(pos[0]); err != nil {
 		return fail("%v", err)
 	}
 	if err := cfg.Save(); err != nil {
 		return fail("%v", err)
 	}
-	fmt.Fprintf(os.Stderr, "default account is now %s\n", fs.Arg(0))
+	fmt.Fprintf(os.Stderr, "default account is now %s\n", pos[0])
 	return 0
 }
 
@@ -106,9 +111,13 @@ func cmdAccountRemove(ctx context.Context, args []string) int {
 	assumeYes := false
 	fs.StringVar(&configPath, "config", "", "config file path")
 	fs.BoolVar(&assumeYes, "yes", false, "do not ask for confirmation")
-	email, flagArgs := extractPositional(args)
+	flagArgs, pos := partitionArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
+	}
+	email := ""
+	if len(pos) > 0 {
+		email = pos[0]
 	}
 	if email == "" {
 		return fail("usage: dwshell account rm <email> [--yes]")
@@ -128,28 +137,6 @@ func cmdAccountRemove(ctx context.Context, args []string) int {
 	}
 	fmt.Fprintf(os.Stderr, "account %s removed\n", email)
 	return 0
-}
-
-// extractPositional pulls the first non-flag token out of a subcommand's args,
-// returning it with the flags that surrounded it. Go's flag package stops at
-// the first positional, so `account rm a@b --yes` would otherwise drop --yes;
-// this mirrors what extractAgent does for the shell shortcut.
-func extractPositional(args []string) (pos string, flagArgs []string) {
-	i := 0
-	for i < len(args) {
-		a := args[i]
-		if len(a) > 0 && a[0] == '-' {
-			flagArgs = append(flagArgs, a)
-			if !containsEq(a) && valueFlags[trimDashes(a)] && i+1 < len(args) {
-				i++
-				flagArgs = append(flagArgs, args[i])
-			}
-			i++
-			continue
-		}
-		return a, append(flagArgs, args[i+1:]...)
-	}
-	return "", flagArgs
 }
 
 // confirm gates a change that cannot be undone. With a terminal it asks; with

@@ -29,35 +29,6 @@ func newFlags(name string) *flag.FlagSet {
 	return fs
 }
 
-// valueFlags are agent-command flags that consume a following value token.
-var valueFlags = map[string]bool{"c": true, "term": true, "config": true, "timeout": true, "account": true, "description": true, "group": true}
-
-// extractAgent pulls the first positional (the agent) out of args, returning it
-// plus the remaining flag arguments in order. It skips the value token that
-// follows a value flag so `dwshell GHE -c "ls"` and `dwshell -c "ls" GHE` both
-// work.
-func extractAgent(args []string) (agent string, flagArgs []string) {
-	i := 0
-	for i < len(args) {
-		a := args[i]
-		if len(a) > 0 && a[0] == '-' {
-			flagArgs = append(flagArgs, a)
-			name := trimDashes(a)
-			// -flag=value is self-contained; a bare value flag consumes the next.
-			if !containsEq(a) && valueFlags[name] && i+1 < len(args) {
-				i++
-				flagArgs = append(flagArgs, args[i])
-			}
-			i++
-			continue
-		}
-		agent = a
-		flagArgs = append(flagArgs, args[i+1:]...)
-		return agent, flagArgs
-	}
-	return "", flagArgs
-}
-
 func trimDashes(s string) string {
 	for len(s) > 0 && s[0] == '-' {
 		s = s[1:]
@@ -136,6 +107,20 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	// Flags may be written anywhere, so the command is the first positional
+	// rather than simply os.Args[1]: `dwshell --account a@b list` and
+	// `dwshell list --account a@b` are the same command. What follows it is
+	// handed on with the surrounding flags reattached.
+	globalFlags, pos := partitionArgs(os.Args[1:])
+	command := ""
+	if len(pos) > 0 {
+		command = pos[0]
+	}
+	sub := func() []string {
+		rest := append([]string{}, globalFlags...)
+		return append(rest, pos[1:]...)
+	}
+
 	switch os.Args[1] {
 	case "-h", "--help", "help":
 		fmt.Print(usage)
@@ -143,30 +128,39 @@ func run() int {
 	case "-V", "--version", "version":
 		fmt.Println("dwshell " + versionString())
 		return 0
+	}
+
+	switch command {
+	case "help":
+		fmt.Print(usage)
+		return 0
+	case "version":
+		fmt.Println("dwshell " + versionString())
+		return 0
 	case "login":
-		return cmdLogin(ctx, os.Args[2:])
+		return cmdLogin(ctx, sub())
 	case "account":
-		return cmdAccount(ctx, os.Args[2:])
+		return cmdAccount(ctx, sub())
 	case "logout":
-		return cmdLogout(ctx, os.Args[2:])
+		return cmdLogout(ctx, sub())
 	case "list":
-		return cmdList(ctx, os.Args[2:])
+		return cmdList(ctx, sub())
 	case "ls":
-		return cmdLs(ctx, os.Args[2:])
+		return cmdLs(ctx, sub())
 	case "get":
-		return cmdGet(ctx, os.Args[2:])
+		return cmdGet(ctx, sub())
 	case "put":
-		return cmdPut(ctx, os.Args[2:])
+		return cmdPut(ctx, sub())
 	case "rm":
-		return cmdRm(ctx, os.Args[2:])
+		return cmdRm(ctx, sub())
 	case "sync":
-		return cmdSync(ctx, os.Args[2:])
+		return cmdSync(ctx, sub())
 	case "agent":
-		return cmdAgentManage(ctx, os.Args[2:])
+		return cmdAgentManage(ctx, sub())
 	case "shell":
 		// Explicit form: the next argument is always an agent, even if it happens
 		// to be named like a subcommand (e.g. `dwshell shell version`).
-		return cmdAgent(ctx, os.Args[2:])
+		return cmdAgent(ctx, sub())
 	default:
 		// Shortcut form: `dwshell <agent> [flags]`. If your agent is named like a
 		// subcommand, use the explicit `dwshell shell <agent>` form above.
@@ -190,7 +184,8 @@ func cmdLogin(ctx context.Context, args []string) int {
 	fs.StringVar(&configPath, "config", "", "config path")
 	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&noTrusted, "no-trusted", false, "do not register a trusted device")
-	if err := fs.Parse(args); err != nil {
+	flagArgs, _ := partitionArgs(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
 
@@ -254,7 +249,8 @@ func cmdLogout(ctx context.Context, args []string) int {
 	fs.StringVar(&configPath, "config", "", "config path")
 	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&all, "all", false, "forget every account")
-	if err := fs.Parse(args); err != nil {
+	flagArgs, _ := partitionArgs(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
 	if all {
@@ -291,7 +287,8 @@ func cmdList(ctx context.Context, args []string) int {
 	fs.StringVar(&configPath, "config", "", "config path")
 	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&asJSON, "json", false, "JSON output")
-	if err := fs.Parse(args); err != nil {
+	flagArgs, _ := partitionArgs(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
 	c, err := client.New(configPath, account)
@@ -346,7 +343,11 @@ func cmdAgent(ctx context.Context, args []string) int {
 	fs.BoolVar(&noTerm, "no-term", false, "do not send TERM")
 	fs.DurationVar(&timeout, "timeout", 0, "command timeout for -c (0 = no timeout)")
 
-	agentArg, rest := extractAgent(args)
+	rest, pos := partitionArgs(args)
+	agentArg := ""
+	if len(pos) > 0 {
+		agentArg = pos[0]
+	}
 	if agentArg == "" {
 		return fail("an agent is required (see `dwshell --help`)")
 	}

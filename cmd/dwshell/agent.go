@@ -65,22 +65,25 @@ func printAgentJSON(a agentJSON) {
 // cmdAgentManage dispatches the `dwshell agent <verb>` family. It is separate
 // from cmdAgent, which is the shell shortcut for `dwshell <agent>`.
 func cmdAgentManage(ctx context.Context, args []string) int {
-	if len(args) == 0 {
+	// The verb is the first positional, so flags may sit on either side of it.
+	flagArgs, pos := partitionArgs(args)
+	if len(pos) == 0 {
 		return fail("usage: dwshell agent <create|code|reinstall|rm|group> …")
 	}
-	switch args[0] {
+	rest := append(append([]string{}, flagArgs...), pos[1:]...)
+	switch pos[0] {
 	case "create":
-		return cmdAgentCreate(ctx, args[1:])
+		return cmdAgentCreate(ctx, rest)
 	case "code":
-		return cmdAgentCode(ctx, args[1:])
+		return cmdAgentCode(ctx, rest)
 	case "rm":
-		return cmdAgentLifecycle(ctx, args[1:], "rm")
+		return cmdAgentLifecycle(ctx, rest, "rm")
 	case "reinstall":
-		return cmdAgentLifecycle(ctx, args[1:], "reinstall")
+		return cmdAgentLifecycle(ctx, rest, "reinstall")
 	case "group":
-		return cmdAgentGroup(ctx, args[1:])
+		return cmdAgentGroup(ctx, rest)
 	default:
-		return fail("unknown agent subcommand %q", args[0])
+		return fail("unknown agent subcommand %q", pos[0])
 	}
 }
 
@@ -94,11 +97,15 @@ func cmdAgentCreate(ctx context.Context, args []string) int {
 	fs.StringVar(&description, "description", "", "free-text description")
 	fs.StringVar(&group, "group", "", "existing group to place the agent in")
 	fs.BoolVar(&asJSON, "json", false, "machine-readable output")
-	name, flagArgs := extractPositional(args)
+	flagArgs, pos := partitionArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
-	if name == "" || fs.NArg() != 0 {
+	name := ""
+	if len(pos) > 0 {
+		name = pos[0]
+	}
+	if name == "" || len(pos) != 1 {
 		return fail("usage: dwshell agent create <name> [--group G] [--description D] [--json]")
 	}
 
@@ -194,9 +201,13 @@ func cmdAgentCode(ctx context.Context, args []string) int {
 	fs.StringVar(&configPath, "config", "", "config file path")
 	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&asJSON, "json", false, "machine-readable output")
-	name, flagArgs := extractPositional(args)
+	flagArgs, pos := partitionArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
+	}
+	name := ""
+	if len(pos) > 0 {
+		name = pos[0]
 	}
 	if name == "" {
 		return fail("usage: dwshell agent code <agent> [--json]")
@@ -228,9 +239,13 @@ func cmdAgentLifecycle(ctx context.Context, args []string, verb string) int {
 	fs.StringVar(&configPath, "config", "", "config file path")
 	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&assumeYes, "yes", false, "do not ask for confirmation")
-	name, flagArgs := extractPositional(args)
+	flagArgs, pos := partitionArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
+	}
+	name := ""
+	if len(pos) > 0 {
+		name = pos[0]
 	}
 	if name == "" {
 		return fail("usage: dwshell agent %s <agent> [--yes]", verb)
@@ -284,16 +299,20 @@ func cmdAgentGroup(ctx context.Context, args []string) int {
 	fs.StringVar(&configPath, "config", "", "config file path")
 	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&none, "none", false, "remove the agent from its group")
-	name, flagArgs := extractPositional(args)
+	flagArgs, pos := partitionArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
+	name := ""
+	if len(pos) > 0 {
+		name = pos[0]
+	}
 	groupName := ""
 	if !none {
-		if fs.NArg() != 1 {
+		if len(pos) != 2 {
 			return fail("usage: dwshell agent group <agent> <group>   (or --none)")
 		}
-		groupName = fs.Arg(0)
+		groupName = pos[1]
 	}
 	if name == "" {
 		return fail("usage: dwshell agent group <agent> <group>   (or --none)")

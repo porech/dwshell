@@ -105,7 +105,11 @@ func cmdLs(ctx context.Context, args []string) int {
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 
-	endpoint, rest := extractAgent(args)
+	rest, pos := partitionArgs(args)
+	endpoint := ""
+	if len(pos) > 0 {
+		endpoint = pos[0]
+	}
 	if endpoint == "" {
 		return fail("usage: dwshell ls <agent>[:<path>]")
 	}
