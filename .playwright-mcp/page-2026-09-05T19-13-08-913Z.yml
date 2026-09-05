@@ -1,0 +1,66 @@
+- generic [ref=f1e3]:
+  - generic [ref=f1e4]:
+    - generic [ref=f1e7] [cursor=pointer]
+    - generic [ref=f1e9]:
+      - generic [active] [ref=f1e100] [cursor=pointer]: Agenti
+      - generic [ref=f1e329] [cursor=pointer]: Gruppi
+    - generic [ref=f1e11]:
+      - generic [ref=f1e12]:
+        - generic [ref=f1e13] [cursor=pointer]
+        - generic [ref=f1e14] [cursor=pointer]: "3"
+      - generic [ref=f1e16] [cursor=pointer]
+  - generic [ref=f1e104]:
+    - generic [ref=f1e106]:
+      - generic [ref=f1e107]: Agenti
+      - generic [ref=f1e111]:
+        - generic [ref=f1e112]: Tutti
+        - generic [ref=f1e114]: Disponibile
+        - generic [ref=f1e116]: Non disponibile
+        - generic [ref=f1e118]: Da installare
+        - generic [ref=f1e120]: Disabilitato
+    - generic [ref=f1e123]:
+      - generic [ref=f1e124]:
+        - generic [ref=f1e125] [cursor=pointer]
+        - generic [ref=f1e127] [cursor=pointer]
+        - generic [ref=f1e129]:
+          - generic: Cerca
+          - textbox [ref=f1e130]
+        - generic [ref=f1e131]:
+          - generic: Gruppo
+          - textbox [ref=f1e132]
+          - generic [ref=f1e133] [cursor=pointer]
+      - generic [ref=f1e136]:
+        - generic [ref=f1e138]:
+          - generic [ref=f1e139]:
+            - generic [ref=f1e140]: BoxRally Acer 1
+            - generic [ref=f1e150] [cursor=pointer]
+          - generic [ref=f1e158]: Non disponibile
+        - generic [ref=f1e164]:
+          - generic [ref=f1e165]:
+            - generic [ref=f1e166]: BoxRally Acer 2
+            - generic [ref=f1e176] [cursor=pointer]
+          - generic [ref=f1e184]: Non disponibile
+        - generic [ref=f1e190]:
+          - generic [ref=f1e191]:
+            - generic [ref=f1e192]: Chromebox
+            - generic [ref=f1e202] [cursor=pointer]
+          - generic [ref=f1e210]: Non disponibile
+        - generic [ref=f1e216]:
+          - generic [ref=f1e217]:
+            - generic [ref=f1e218]: Fisso Poscante
+            - generic [ref=f1e228] [cursor=pointer]
+          - generic [ref=f1e236]: Non disponibile
+        - generic [ref=f1e242]:
+          - generic [ref=f1e243] [cursor=pointer]: GHE
+          - generic [ref=f1e255] [cursor=pointer]
+          - generic [ref=f1e262]: Disponibile
+        - generic [ref=f1e268]:
+          - generic [ref=f1e269]:
+            - generic [ref=f1e270]: Legion
+            - generic [ref=f1e280] [cursor=pointer]
+          - generic [ref=f1e288]: Non disponibile
+        - generic [ref=f1e294]:
+          - generic [ref=f1e295]:
+            - generic [ref=f1e296]: Lenovo
+            - generic [ref=f1e306] [cursor=pointer]
+          - generic [ref=f1e314]: Non disponibile

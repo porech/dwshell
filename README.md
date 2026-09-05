@@ -170,6 +170,11 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell put [-r] <local> <agent>:<remote>` | Upload a file (or directory with `-r`). |
 | `dwshell rm [-r] <agent>:<path> [...]` | Remove remote file(s) (directories with `-r`). |
 | `dwshell sync [flags] <src> <dst>` | One-way sync (size+mtime or `--checksum`); one side is `agent:path`. |
+| `dwshell agent create <name>` | Register a new agent and print its installation code. |
+| `dwshell agent code <agent>` | Print the code of an agent still awaiting installation. |
+| `dwshell agent reinstall <agent>` | Mint a fresh code, invalidating the current one. |
+| `dwshell agent rm <agent>` | Delete an agent from the account. |
+| `dwshell agent group <agent> <group>` | Move an agent into a group (`--none` to remove it). |
 | `dwshell version` | Print the version and exit. |
 | `dwshell help` | Show usage. |
 
@@ -207,6 +212,40 @@ Remote paths are always rooted at `/`, so `GHE:/etc` and a relative `GHE:etc`
 address the same directory, and an omitted path means the root. On Windows `/` is
 the root and lists the drives; address a drive as `agent:/C:/dir` or `agent:C:/dir`
 (`/` and `\` are interchangeable, and a bare `agent:C:` means the drive root).
+
+### Creating agents
+
+`dwshell agent create` registers a machine on your account and prints the code
+that binds an installation to it:
+
+```sh
+$ dwshell agent create web-01
+Agent "web-01" created.
+
+Installation code: 281-407-902
+
+Download the agent on the target machine and enter this code when the installer
+asks for it:
+     https://www.dwservice.net/download.html
+```
+
+The code is then read back with `dwshell agent code web-01` for as long as the
+machine has not been installed — `dwshell list` shows such an agent as
+`pending`. `dwshell agent reinstall` mints a new one and invalidates the old.
+
+Deleting an agent and regenerating a code both ask for confirmation, and refuse
+outright when there is no terminal unless you pass `--yes`, so a script cannot
+remove a machine by accident. Every subcommand takes `--json`.
+
+Groups have to exist already: `dwshell agent group web-01 prod` fails and lists
+the groups you do have rather than creating one from a typo. These commands work
+only on agents you own — a share is someone else's agent, and is refused.
+
+**Installing is still a manual step.** dwshell does not download the installer:
+the download page is where the licence is accepted. The agent's unattended mode
+(`-silent`) is not documented here either, because the service refuses to serve
+it — an install attempted that way answers *"Silent installation forbidden.
+Please contact the support."*
 
 #### Agent name vs subcommand
 

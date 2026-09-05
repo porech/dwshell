@@ -21,23 +21,35 @@ func TestFormatCodePadsToNineDigits(t *testing.T) {
 	}
 }
 
-// The download page is where the licence is accepted, so dwshell must never
-// hand out a line that fetches the installer and runs it.
-func TestInstallInstructionsNeverGiveADownloadAndRunLine(t *testing.T) {
+// What the output may contain is narrow, and each exclusion has a reason.
+func TestInstallInstructionsGiveOnlyTheCodeAndThePage(t *testing.T) {
 	out := installInstructions(281407902)
+
+	if !strings.Contains(out, "281-407-902") {
+		t.Error("must show the code, dashed as the installer expects it")
+	}
+	if strings.Contains(out, "281407902") {
+		t.Error("must never show the undashed code")
+	}
 	if !strings.Contains(out, "https://www.dwservice.net/download.html") {
 		t.Error("must point at the download page, where the licence is accepted")
 	}
+
+	// The download page carries the licence acceptance, so nothing here may
+	// fetch the installer or run it for the user.
 	for _, forbidden := range []string{"curl", "wget", "download/dwagent", "| sh", "|sh"} {
 		if strings.Contains(out, forbidden) {
 			t.Errorf("must not hand out a download-and-run line, found %q", forbidden)
 		}
 	}
-	if !strings.Contains(out, "-silent key=281-407-902") {
-		t.Error("must show the silent-install line with the dashed code")
-	}
-	if strings.Contains(out, "key=281407902") {
-		t.Error("must never hand out the undashed code")
+
+	// Silent installation is refused by the service ("Silent installation
+	// forbidden. Please contact the support."), so promising it would send
+	// people down a path that does not work.
+	for _, forbidden := range []string{"-silent", "dwagent.sh", "dwagent.exe"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("must not describe an unattended install, found %q", forbidden)
+		}
 	}
 }
 

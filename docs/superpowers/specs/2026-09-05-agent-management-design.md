@@ -82,47 +82,49 @@ module=agent command=reinstall parameter id=<agentId>
 
 Puts an installed agent back into state `W` with a fresh `tempCode`.
 
-## 4. Unattended installation
+## 4. What `agent create` hands you
 
-The installer parses its arguments in `fmain` (`ui/installer.py`), which accepts
-`-silent`, `key=<code>`, `name=`, `group=` and `uninstall`. Only the first two
-matter here: the agent already exists server-side and the code binds the
-installation to it. The `user=`/`password=` path, which creates the agent during
-installation, is deliberately unused — it would put account credentials on the
-target machine, which is exactly what a single-use code avoids.
-
-### dwshell does not download the installer, and does not tell you to
-
-The download page carries the acceptance of the licence:
-
-> By selecting the 'Download' button I accept the Terms and Conditions and the
-> Restrictive Terms and Conditions.
-
-A `curl … | sh` one-liner would be more convenient and would route around that
-acceptance. So `agent create` prints **the download page**, not a direct file
-URL, and a run line that assumes the installer is already on the machine:
+The code, and the page to download the agent from. Nothing else.
 
 ```
 Installation code: 281-407-902
 
-1. Download the agent on the target machine (accepting the licence):
-   https://www.dwservice.net/download.html
-
-2. Run the unattended setup there:
-   Linux / macOS:  sudo sh dwagent.sh -silent key=281-407-902
-   Windows:        dwagent.exe -silent key=281-407-902
+Download the agent on the target machine and enter this code when the installer
+asks for it:
+     https://www.dwservice.net/download.html
 ```
 
+Two omissions, each deliberate.
+
+**No download-and-run line.** The download page carries the licence acceptance:
+
+> By selecting the 'Download' button I accept the Terms and Conditions and the
+> Restrictive Terms and Conditions.
+
+A `curl … | sh` one-liner would be more convenient and would route around that.
 The direct file URLs are known and verified (`download/dwagent.sh`,
-`download/dwagent.exe`, both HTTP 200; there is no `_x64` variant) and are
-deliberately **not** printed.
+`download/dwagent.exe`, both HTTP 200) and stay unused.
 
-Silent mode forces a real installation — it disables the installer's
-"run without installing" path — so the command installs and registers a service.
-`uninstall` is the reverse, which the macOS verification in §8 relies on.
+**No unattended install.** The installer does accept `-silent key=<code>` — its
+argument parser reads both — but **the service refuses to serve it.** Tested
+live in a Debian container with a real code:
 
-The exact run lines are settled by the live verification in §8: nothing is
-printed that has not been run, except where §9 says otherwise.
+```
+Downloading file distr.json...
+Silent installation forbidden. Please contact the support.
+```
+
+The refusal comes from the server, which answers `_download_files` with a
+`#SILENTFORBIDDEN` marker that the installer turns into that message
+(`ui/installer.py:2587`). What gates it was not established; this account has no
+subscription, which is a plausible but unverified explanation. Since it does not
+work, it is not documented: promising an unattended setup would send people down
+a path that fails.
+
+The feature is therefore narrower than it set out to be, and still worth having:
+the code is obtained, read back, regenerated and managed from the terminal
+instead of from a browser. Only the last step — typing the code into the
+installer — stays manual.
 
 ## 5. Command surface
 
@@ -195,21 +197,17 @@ with and without a terminal.
 
 Live verification, since the whole point is an installation that really works:
 
-- **Linux** — ephemeral Docker container, silent install with a real code, agent
-  confirmed online, container destroyed.
-- **macOS** — this workstation, installed then uninstalled.
-- **Windows** — deferred; see §9.
+- **Linux** — an ephemeral Docker container established that the service refuses
+  a silent install, which is why §4 documents none.
+- Nothing is installed on a real machine: with no unattended path to verify,
+  there is nothing an installation would prove that the code itself does not.
 
 ## 9. Open questions
 
-1. **Windows verification is deferred.** Linux and macOS are validated first and
-   the Windows run line ships marked as derived from the installer's source, not
-   executed. No Windows machine is available: the owned Windows agents are
-   offline and the online ones are shares. A QEMU VM is possible in principle —
-   the host has the aarch64 UEFI firmware and Windows 11 Arm64 ISOs are
-   published, so it would be HVF-accelerated rather than emulated — but the
-   workstation's disk is 98% full, with 25.7 GB free against an ISO plus an
-   installation. Freeing roughly 40 GB, or supplying a machine, would close it.
+1. **Why silent installation is forbidden is unknown.** It is refused by the
+   service, not by the installer. Whether a subscription, a support request or
+   something else lifts it was not established. If it is ever enabled, the run
+   lines can be added — the installer already accepts `-silent key=`.
 2. **The commit wire format is derived from the client's code, not observed.**
    Every field is read from `mod_ui_datasource.js` and the manager packages, and
    no agent was created while establishing it. First implementation step is to
