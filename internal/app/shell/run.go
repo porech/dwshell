@@ -3,6 +3,7 @@ package shell
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 var (
 	reBegin = regexp.MustCompile(`__DWSH_BEGIN__\r?\n`)
 	reRC    = regexp.MustCompile(`__DWSH_RC_(\d+)_END__`)
+	reTrunc = regexp.MustCompile(`__DWSH_TRUNC_(\d+)_END__`)
 )
 
 // RunResult is the outcome of a non-interactive command.
@@ -38,6 +40,30 @@ func wrapCommand(cmd string, os remote.OS) string {
 	return fmt.Sprintf("echo __DWSH_BEGIN__; ( %s ); echo __DWSH_RC_$?_END__\r", cmd)
 }
 
+// errTruncated reports a command line the remote shell cut short. How long a
+// line a remote accepts is the remote shell's own business and differs between
+// shells, so dwshell does not try to predict it — it reports the truncation
+// when it happens instead.
+var errTruncated = errors.New(
+	"the remote shell truncated the command line, so it ran a partial command and the exit-code marker was lost; " +
+		"send a shorter command, or upload it with `dwshell put` and run it by path")
+
+// probeLine is typed as its own short line right after the command. A shell
+// reads it only once it has read and run the command line, so its marker can
+// never come back before that command's RC sentinel — unless the remote
+// truncated the command line and took the sentinel with it. That makes a lost
+// sentinel detectable on any remote, whatever its line limit happens to be.
+//
+// Like the RC sentinel, the marker is assembled by the remote (`$?` /
+// %errorlevel%) so that the PTY echoing the typed line back, or a command that
+// reads its stdin and prints it, cannot be mistaken for the marker itself.
+func probeLine(os remote.OS) string {
+	if os == remote.OSWindows {
+		return "echo __DWSH_TRUNC_%errorlevel%_END__\r"
+	}
+	return "echo __DWSH_TRUNC_$?_END__\r"
+}
+
 // Run executes a single command non-interactively and returns its output and
 // exit code. It opens a fresh shell, sends the wrapped command, and reads until
 // the RC sentinel (or ctx/timeout fires).
@@ -55,6 +81,9 @@ func Run(ctx context.Context, sess *session.Session, os remote.OS, command strin
 	}
 
 	if err := sh.Input(wrapCommand(command, os)); err != nil {
+		return nil, err
+	}
+	if err := sh.Input(probeLine(os)); err != nil {
 		return nil, err
 	}
 
@@ -89,6 +118,11 @@ func Run(ctx context.Context, sess *session.Session, os remote.OS, command strin
 					res.Authenticated = authed
 				}
 				return res, err
+			}
+			// The probe came back but the sentinel never did: the remote cut
+			// the command line short and ran what was left of it.
+			if reTrunc.Match(buf.Bytes()) {
+				return nil, errTruncated
 			}
 		}
 	}

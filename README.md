@@ -248,9 +248,11 @@ DWSHELL_REMOTE_PASSWORD=… dwshell alice@myhost -c "id"
 
 - `-c <command>` — run a command non-interactively and exit with its code.
   Long commands are fine — they are split across several protocol messages, the
-  way typing them would be — but the *remote shell* still applies its own limit:
-  `cmd.exe` on Windows truncates a command line past 8191 characters, so pass a
-  bigger script with `dwshell put` and run it by path.
+  way typing them would be — but the *remote shell* still caps how long a single
+  command line may be, and the cap differs from shell to shell. A remote that
+  truncates the line is reported as such instead of leaving you waiting on
+  output that can never arrive; pass a bigger script with `dwshell put` and run
+  it by path.
 - `--own` / `--shared` — resolve `<host>` among owned agents / incoming shares only.
 - `--term <value>` — TERM to send to a *nix remote (default: your local `$TERM`).
 - `--no-term` — do not send a TERM to the remote.
