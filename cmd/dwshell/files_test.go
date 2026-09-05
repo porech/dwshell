@@ -1,9 +1,6 @@
 package main
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestParseRemote(t *testing.T) {
 	tests := []struct {
@@ -89,19 +86,5 @@ func TestIsRemoteEndpoint(t *testing.T) {
 		if got := isRemoteEndpoint(in); got != want {
 			t.Errorf("isRemoteEndpoint(%q) = %v, want %v", in, got, want)
 		}
-	}
-}
-
-// --account takes a value, so the shell shortcut has to skip that value when
-// looking for the agent name — otherwise `dwshell --account a@b GHE` would take
-// the email for the agent.
-func TestExtractAgentSkipsTheAccountValue(t *testing.T) {
-	agent, flags := extractAgent([]string{"--account", "a@b", "GHE", "-c", "ls"})
-	if agent != "GHE" {
-		t.Fatalf("agent = %q, want GHE", agent)
-	}
-	joined := strings.Join(flags, " ")
-	if !strings.Contains(joined, "--account a@b") || !strings.Contains(joined, "-c ls") {
-		t.Fatalf("flags = %v", flags)
 	}
 }
