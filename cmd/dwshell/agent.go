@@ -62,32 +62,6 @@ func printAgentJSON(a agentJSON) {
 	_ = enc.Encode(a)
 }
 
-// agentValueFlags are the `agent` subcommand flags that consume a following
-// value token, so a positional can be pulled out from among them.
-var agentValueFlags = map[string]bool{"config": true, "description": true, "group": true}
-
-// extractPositional pulls the first non-flag token out of a subcommand's args,
-// returning it with the flags that surrounded it. Go's flag package stops at
-// the first positional, so `agent create NAME --json` would otherwise silently
-// drop --json; this mirrors what extractAgent does for the shell shortcut.
-func extractPositional(args []string) (pos string, flagArgs []string) {
-	i := 0
-	for i < len(args) {
-		a := args[i]
-		if len(a) > 0 && a[0] == '-' {
-			flagArgs = append(flagArgs, a)
-			if !containsEq(a) && agentValueFlags[trimDashes(a)] && i+1 < len(args) {
-				i++
-				flagArgs = append(flagArgs, args[i])
-			}
-			i++
-			continue
-		}
-		return a, append(flagArgs, args[i+1:]...)
-	}
-	return "", flagArgs
-}
-
 // cmdAgentManage dispatches the `dwshell agent <verb>` family. It is separate
 // from cmdAgent, which is the shell shortcut for `dwshell <agent>`.
 func cmdAgentManage(ctx context.Context, args []string) int {
@@ -112,9 +86,11 @@ func cmdAgentManage(ctx context.Context, args []string) int {
 
 func cmdAgentCreate(ctx context.Context, args []string) int {
 	fs := newFlags("agent create")
+	var account string
 	var configPath, description, group string
 	asJSON := false
 	fs.StringVar(&configPath, "config", "", "config file path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.StringVar(&description, "description", "", "free-text description")
 	fs.StringVar(&group, "group", "", "existing group to place the agent in")
 	fs.BoolVar(&asJSON, "json", false, "machine-readable output")
@@ -126,7 +102,7 @@ func cmdAgentCreate(ctx context.Context, args []string) int {
 		return fail("usage: dwshell agent create <name> [--group G] [--description D] [--json]")
 	}
 
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -163,25 +139,6 @@ func cmdAgentCreate(ctx context.Context, args []string) int {
 	return 0
 }
 
-// confirm gates a change that cannot be undone. With a terminal it asks; with
-// none — a script, a CI job — it refuses unless the caller passed --yes, so
-// automation cannot delete a machine or invalidate a code by accident.
-func confirm(prompt string, assumeYes, interactive bool) error {
-	if assumeYes {
-		return nil
-	}
-	if !interactive {
-		return fmt.Errorf("%s refusing without a terminal; pass --yes to proceed", prompt)
-	}
-	fmt.Fprintf(os.Stderr, "%s [y/N] ", prompt)
-	var answer string
-	_, _ = fmt.Fscanln(os.Stdin, &answer)
-	if answer != "y" && answer != "Y" {
-		return fmt.Errorf("cancelled")
-	}
-	return nil
-}
-
 // resolveOwnAgent finds an agent by name or id and refuses anything these
 // commands cannot act on: a share is someone else's agent.
 func resolveOwnAgent(machines []remote.Machine, query string) (*remote.Machine, error) {
@@ -209,8 +166,8 @@ func agentCodeFor(m *remote.Machine) error {
 
 // agentSession resolves an owned agent and hands back a session for acting on
 // the account, which every subcommand below needs.
-func agentSession(ctx context.Context, configPath, query string) (*remote.Machine, *client.Client, *session.Session, int) {
-	c, err := client.New(configPath)
+func agentSession(ctx context.Context, configPath, account, query string) (*remote.Machine, *client.Client, *session.Session, int) {
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return nil, nil, nil, fail("%v", err)
 	}
@@ -231,9 +188,11 @@ func agentSession(ctx context.Context, configPath, query string) (*remote.Machin
 
 func cmdAgentCode(ctx context.Context, args []string) int {
 	fs := newFlags("agent code")
+	var account string
 	var configPath string
 	asJSON := false
 	fs.StringVar(&configPath, "config", "", "config file path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&asJSON, "json", false, "machine-readable output")
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -242,7 +201,7 @@ func cmdAgentCode(ctx context.Context, args []string) int {
 	if name == "" {
 		return fail("usage: dwshell agent code <agent> [--json]")
 	}
-	m, _, _, code := agentSession(ctx, configPath, name)
+	m, _, _, code := agentSession(ctx, configPath, account, name)
 	if m == nil {
 		return code
 	}
@@ -264,9 +223,10 @@ func cmdAgentCode(ctx context.Context, args []string) int {
 // and what they warn about: both are irreversible and both confirm first.
 func cmdAgentLifecycle(ctx context.Context, args []string, verb string) int {
 	fs := newFlags("agent " + verb)
-	var configPath string
+	var configPath, account string
 	assumeYes := false
 	fs.StringVar(&configPath, "config", "", "config file path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&assumeYes, "yes", false, "do not ask for confirmation")
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -275,7 +235,7 @@ func cmdAgentLifecycle(ctx context.Context, args []string, verb string) int {
 	if name == "" {
 		return fail("usage: dwshell agent %s <agent> [--yes]", verb)
 	}
-	m, _, sess, code := agentSession(ctx, configPath, name)
+	m, _, sess, code := agentSession(ctx, configPath, account, name)
 	if m == nil {
 		return code
 	}
@@ -300,7 +260,7 @@ func cmdAgentLifecycle(ctx context.Context, args []string, verb string) int {
 	}
 	// The command acknowledges without echoing the record, so the new code is
 	// read back from the listing.
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -318,9 +278,11 @@ func cmdAgentLifecycle(ctx context.Context, args []string, verb string) int {
 
 func cmdAgentGroup(ctx context.Context, args []string) int {
 	fs := newFlags("agent group")
+	var account string
 	var configPath string
 	none := false
 	fs.StringVar(&configPath, "config", "", "config file path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&none, "none", false, "remove the agent from its group")
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -337,7 +299,7 @@ func cmdAgentGroup(ctx context.Context, args []string) int {
 		return fail("usage: dwshell agent group <agent> <group>   (or --none)")
 	}
 
-	m, _, sess, code := agentSession(ctx, configPath, name)
+	m, _, sess, code := agentSession(ctx, configPath, account, name)
 	if m == nil {
 		return code
 	}

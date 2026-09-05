@@ -29,13 +29,32 @@ type SessionState struct {
 	Cookies       []NamedCookie `json:"cookies,omitempty"`
 }
 
-// Config is the on-disk state.
-type Config struct {
+// Account is one DWService account: its user, the reusable session, and the
+// optional trusted device that refreshes that session without a password.
+type Account struct {
 	User          string              `json:"user,omitempty"`
 	Session       *SessionState       `json:"session,omitempty"`
 	TrustedDevice *auth.TrustedDevice `json:"trustedDevice,omitempty"`
+}
 
-	path string
+// Config is the on-disk state: the accounts that have been logged in, and which
+// of them commands act on when none is named.
+type Config struct {
+	Default  string     `json:"default,omitempty"`
+	Accounts []*Account `json:"accounts,omitempty"`
+
+	path     string
+	selected *Account
+}
+
+// Find returns the account registered for an email, or nil.
+func (c *Config) Find(email string) *Account {
+	for _, a := range c.Accounts {
+		if a.User == email {
+			return a
+		}
+	}
+	return nil
 }
 
 // DefaultPath returns the config file path (XDG on Unix, AppData on Windows),
@@ -73,6 +92,9 @@ func Load(path string) (*Config, error) {
 	if err := json.Unmarshal(b, c); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	if err := migrateFlat(b, c); err != nil {
+		return nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
 	c.path = path
 	return c, nil
 }
@@ -98,9 +120,3 @@ func (c *Config) Save() error {
 
 // Path returns the file path backing this config.
 func (c *Config) Path() string { return c.path }
-
-// Clear removes all persisted credentials (used by logout).
-func (c *Config) Clear() {
-	c.Session = nil
-	c.TrustedDevice = nil
-}
