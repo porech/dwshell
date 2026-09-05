@@ -160,7 +160,8 @@ the session without any of this. To supply a code non-interactively, see
 | Command | Description |
 |---|---|
 | `dwshell login [--user U] [--no-trusted]` | Authenticate and persist the session (and, by default, a trusted device). |
-| `dwshell logout` | Deregister the trusted device and forget local credentials. |
+| `dwshell logout [--all]` | Deregister the trusted device and forget local credentials. |
+| `dwshell account list\|default\|rm` | Manage accounts, once you log in with more than one. |
 | `dwshell list [--json]` | List machines with OS, online state, and owned/shared. |
 | `dwshell <agent>` | Open an interactive shell. |
 | `dwshell <agent> -c "cmd"` | Run a command non-interactively; exit code is propagated. |
@@ -207,6 +208,38 @@ Remote paths are always rooted at `/`, so `GHE:/etc` and a relative `GHE:etc`
 address the same directory, and an omitted path means the root. On Windows `/` is
 the root and lists the drives; address a drive as `agent:/C:/dir` or `agent:C:/dir`
 (`/` and `\` are interchangeable, and a bare `agent:C:` means the drive root).
+
+### More than one account
+
+Log in twice with different emails and dwshell keeps both. Until you do, nothing
+changes: with a single account there is no default to think about and no flag to
+pass, and an existing configuration is carried over the first time dwshell saves
+anything.
+
+```sh
+$ dwshell login --user info@example.com     # the email is the account's identity
+$ dwshell account list
+ale@example.net  (default)
+info@example.com
+
+$ dwshell list                              # the default account
+$ dwshell list --account info@example.com   # the other one
+$ DWSHELL_ACCOUNT=info@example.com dwshell list      # for a whole session
+```
+
+The first account you log in with becomes the default; change it with
+`dwshell account default <email>`. Logging in again with an email already
+registered just refreshes that account.
+
+`dwshell logout` forgets the selected account, `--all` forgets every one, and
+`dwshell account rm <email>` forgets a named one — each deregistering that
+account's trusted device, and each asking for confirmation unless you pass
+`--yes`. Remove the default and, if a single account is left, it takes over; if
+several remain, dwshell asks you to pick one rather than choosing for you.
+
+Flags follow their subcommand — `dwshell list --account …`, not
+`dwshell --account … list` — except in the shell shortcut, where
+`dwshell --account … myserver` works too.
 
 #### Agent name vs subcommand
 

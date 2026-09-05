@@ -50,15 +50,27 @@ type Client struct {
 	http *http.Client
 }
 
-// New builds a Client from a config path (empty = default), seeding the cookie
-// jar with any persisted node session cookie.
-func New(configPath string) (*Client, error) {
+// New builds a Client from a config path (empty = default) and an account
+// selector (empty = DWSHELL_ACCOUNT, else the default account), seeding the
+// cookie jar with that account's persisted node cookie.
+//
+// Selection happens here so that an unknown --account fails before a command
+// starts doing work, rather than halfway through it.
+func New(configPath, account string) (*Client, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, err
 	}
+	// An empty configuration is not an error: `login` starts from one.
+	if len(cfg.Accounts) > 0 {
+		if err := cfg.Select(account); err != nil {
+			return nil, err
+		}
+	} else if account != "" {
+		return nil, fmt.Errorf("no account %q: nothing is configured yet", account)
+	}
 	jar, _ := cookiejar.New(nil)
-	if s := cfg.Session; s != nil && len(s.Cookies) > 0 {
+	if s := cfg.Current().Session; s != nil && len(s.Cookies) > 0 {
 		if u, e := neturl.Parse(s.CommandURL); e == nil {
 			var cks []*http.Cookie
 			for _, c := range s.Cookies {
@@ -67,6 +79,19 @@ func New(configPath string) (*Client, error) {
 			jar.SetCookies(u, cks)
 		}
 	}
+	return &Client{cfg: cfg, http: &http.Client{Jar: jar, Timeout: 60 * time.Second}}, nil
+}
+
+// NewForLogin builds a Client without selecting an account. `login` must work
+// even when several accounts are configured and none is the default — which is
+// exactly the state that makes Select refuse — because logging in is one of the
+// ways out of it.
+func NewForLogin(configPath string) (*Client, error) {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, err
+	}
+	jar, _ := cookiejar.New(nil)
 	return &Client{cfg: cfg, http: &http.Client{Jar: jar, Timeout: 60 * time.Second}}, nil
 }
 
@@ -97,40 +122,66 @@ func (c *Client) Login(ctx context.Context, user, password string, registerTrust
 		return err
 	}
 
+	// The email is the account key: an unseen one is registered, a known one has
+	// its credentials replaced. Add also selects it, so what follows writes into
+	// the right account.
+	acct := c.cfg.Add(user)
 	if err := c.persistSession(ctx, boot); err != nil {
 		return err
 	}
-	c.cfg.User = user
 	if tdReq != nil && tdReq.Result != nil {
-		c.cfg.TrustedDevice = tdReq.Result
+		acct.TrustedDevice = tdReq.Result
 	}
 	return c.cfg.Save()
 }
 
-// Logout deregisters the trusted device on the account (freeing its capped slot)
-// and forgets local credentials. Server-side removal failure is non-fatal.
+// Logout deregisters the selected account's trusted device (freeing its capped
+// slot) and forgets that account. With one account this is exactly what it has
+// always done.
 func (c *Client) Logout(ctx context.Context) error {
-	if td := c.cfg.TrustedDevice; td != nil {
-		if cfg, err := auth.FetchLoginConfig(ctx, c.http); err == nil {
-			_ = auth.RemoveTrustedDevice(ctx, c.http, cfg, td)
+	acct := c.cfg.Current()
+	c.deregister(ctx, acct)
+	if acct.User != "" {
+		if err := c.cfg.Remove(acct.User); err != nil {
+			return err
 		}
+	} else {
+		c.cfg.Clear()
+	}
+	return c.cfg.Save()
+}
+
+// LogoutAll forgets every account, deregistering each trusted device.
+func (c *Client) LogoutAll(ctx context.Context) error {
+	for _, a := range c.cfg.Accounts {
+		c.deregister(ctx, a)
 	}
 	c.cfg.Clear()
-	c.cfg.User = ""
 	return c.cfg.Save()
+}
+
+// deregister removes an account's trusted device server-side. Failure is
+// non-fatal, as it always was: the local credentials go regardless.
+func (c *Client) deregister(ctx context.Context, a *config.Account) {
+	if a == nil || a.TrustedDevice == nil {
+		return
+	}
+	if cfg, err := auth.FetchLoginConfig(ctx, c.http); err == nil {
+		_ = auth.RemoveTrustedDevice(ctx, c.http, cfg, a.TrustedDevice)
+	}
 }
 
 // Session returns a valid account session, refreshing via the trusted device if
 // the stored session has expired. Returns ErrNeedLogin when neither is usable.
 func (c *Client) Session(ctx context.Context) (*session.Session, error) {
-	if s := c.cfg.Session; s != nil && s.SignKey != nil {
+	if s := c.cfg.Current().Session; s != nil && s.SignKey != nil {
 		sess := session.Restore(s.CommandURL, s.SignKey, s.CustomHeaders, c.http)
 		if sess.Valid(ctx) {
 			return sess, nil
 		}
 	}
 	// Session missing/expired: try a passwordless refresh.
-	if td := c.cfg.TrustedDevice; td != nil {
+	if td := c.cfg.Current().TrustedDevice; td != nil {
 		cfg, err := auth.FetchLoginConfig(ctx, c.http)
 		if err != nil {
 			return nil, err
@@ -145,7 +196,8 @@ func (c *Client) Session(ctx context.Context) (*session.Session, error) {
 		if err := c.cfg.Save(); err != nil {
 			return nil, err
 		}
-		return session.Restore(c.cfg.Session.CommandURL, c.cfg.Session.SignKey, c.cfg.Session.CustomHeaders, c.http), nil
+		cur := c.cfg.Current().Session
+		return session.Restore(cur.CommandURL, cur.SignKey, cur.CustomHeaders, c.http), nil
 	}
 	return nil, ErrNeedLogin
 }
@@ -160,7 +212,7 @@ func (c *Client) persistSession(ctx context.Context, boot *auth.Bootstrap) error
 	if err := sess.Initialize(ctx); err != nil {
 		return err
 	}
-	c.cfg.Session = &config.SessionState{
+	c.cfg.Current().Session = &config.SessionState{
 		CommandURL:    sess.CommandURL(),
 		SignKey:       boot.SignKey,
 		CustomHeaders: sess.CustomHeaders(),
