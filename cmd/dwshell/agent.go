@@ -30,19 +30,21 @@ func formatCode(code int) string {
 	return s[0:3] + "-" + s[3:6] + "-" + s[6:]
 }
 
-// installInstructions renders what to do with a fresh installation code: fetch
-// the agent by hand from the download page, then run the silent install there.
+// installInstructions renders what to do with a fresh installation code.
+//
+// It gives the code and the page, and nothing else. Two things are deliberately
+// absent: any line that downloads the installer, because the page is where the
+// licence is accepted, and any mention of the installer's unattended mode,
+// because the service refuses it — an install run with -silent answers "Silent
+// installation forbidden. Please contact the support." Documenting it would
+// send people down a path that does not work.
 func installInstructions(code int) string {
-	c := formatCode(code)
 	return fmt.Sprintf(`Installation code: %s
 
-1. Download the agent on the target machine (this is where you accept the licence):
+Download the agent on the target machine and enter this code when the installer
+asks for it:
      %s
-
-2. Run the unattended setup there:
-     Linux / macOS   sudo sh dwagent.sh -silent key=%s
-     Windows         dwagent.exe -silent key=%s
-`, c, downloadPage, c, c)
+`, formatCode(code), downloadPage)
 }
 
 // agentJSON is the --json shape of an agent and, when it has one, its code.

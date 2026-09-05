@@ -487,3 +487,71 @@ header), and `key` is a client-generated id (no handshake):
 
 The filesystem app has **no checksum** in its metadata and **no set-mtime**
 command; dwshell's sync plans work around both using the shell (see DESIGN.md).
+
+## 9. Account datasources (agents, groups)
+
+Agents and groups are "datasources" on the account command channel, edited by
+submitting a batch of pending changes. Verified live against the service on
+2026-09-05.
+
+### Reading
+
+```
+module=agent command=datasource parameter operation=load
+→ {"allowAdd":true,"allowDelete":true,"allowUpdate":true,"items":[…],"status":"ok"}
+```
+
+An agent record carries, among others:
+
+| field | meaning |
+|---|---|
+| `id` / `_id` | agent id (both forms appear; writes want both) |
+| `name`, `description`, `displayName`, `fullName` | naming |
+| `state` | `N` online, `F` offline, `W` awaiting installation, `D` disabled |
+| `tempCode` | installation code, **a JSON number**, non-null only while `state` is `W` |
+| `idGroup`, `group` | group membership |
+| `osType` | **null until the agent is installed** |
+
+`module=group` has the same shape with `{name, description, _id}`.
+
+### Writing
+
+```
+module=<agent|group> command=datasource
+  parameter operation=commit
+  parameter changes=[{"operation":"add"|"update"|"delete","index":N,"item":{…}}]
+→ {"status":"ok","itemsChanged":[{"index":N,"item":{…}}]}
+```
+
+- **add** takes `{name, description, idGroup}` and echoes back the created
+  record — including `tempCode`, so creating an agent and learning its code is
+  one round trip.
+- **update** must carry the **whole record** with the field altered. Sending
+  only the changed keys is answered with `java.lang.NullPointerException`; the
+  browser client merges its edit into the loaded item and sends that.
+- **delete** needs only `{_id, id}`.
+
+A rejection arrives inside a successful HTTP response as `"status":"error"` with
+a `message` — for instance `L'agente 'x' già esiste.`, localized to the account.
+
+### Regenerating an installation code
+
+```
+module=agent command=reinstall parameter id=<agentId>
+```
+
+Returns a bare acknowledgement, not the record, so the new code is read back
+from the listing.
+
+### The installation code
+
+`tempCode` is a number on the wire (`281407902`) but is never shown or typed
+that way: the client renders it in groups of three (`281-407-902`) and the
+installer forwards the code stripping only whitespace, keeping the dashes. Being
+a number, a leading zero cannot survive the wire, so it is padded back to nine
+digits before grouping.
+
+The agent installer accepts `key=<code>` alongside `-silent`, but **the service
+refuses to serve a silent installation**: it answers `_download_files` with a
+`#SILENTFORBIDDEN` marker, which the installer reports as "Silent installation
+forbidden. Please contact the support." What lifts that was not established.

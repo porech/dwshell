@@ -94,7 +94,8 @@ Usage:
   dwshell put [-r] <local> <agent>:<remote>   Upload a file or directory
   dwshell rm [-r] <agent>:<path> [<path>...]  Remove remote file(s)/dir(s)
   dwshell sync [-n] [--delete] [--checksum] <src> <dst>   One-way sync
-  dwshell agent create <name> [--group G] [--json]        Create an agent, print its install code
+  dwshell agent create <name> [--group G] [--json]        Register an agent, print its install code
+  dwshell agent code|reinstall|rm|group <agent>           Manage an agent you own
 
 Agent flags:
   -c string        Run command non-interactively, capture output, exit
