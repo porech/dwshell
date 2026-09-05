@@ -256,8 +256,49 @@ func (f frame) result(found bool) ([]byte, error) {
 	}
 }
 
+// utf16Len counts a string the way the service does: in UTF-16 code units, one
+// per character up to U+FFFF and two beyond it. This is what JavaScript's
+// String.length and Java's String.length() report, and the framed payload
+// lengths are produced by that side.
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		if r > 0xFFFF {
+			n += 2
+		} else {
+			n++
+		}
+	}
+	return n
+}
+
+// utf16Split cuts s after n UTF-16 code units, returning the prefix and the
+// rest. ok is false when s holds fewer than n units.
+func utf16Split(s string, n int) (prefix, rest string, ok bool) {
+	units := 0
+	for i, r := range s {
+		if units == n {
+			return s[:i], s[i:], true
+		}
+		if r > 0xFFFF {
+			units += 2
+		} else {
+			units++
+		}
+	}
+	if units == n {
+		return s, "", true
+	}
+	return "", s, false
+}
+
 // parseFrames decodes a framed command response (PROTOCOL.md §3) into a map of
 // command id → frame. A leading E/D/B status is a session-level error.
+//
+// Payload lengths in the framing count characters, not bytes, so they are
+// consumed in UTF-16 code units. Slicing by bytes works only while everything
+// is ASCII and silently truncates the moment it is not — a localized error
+// message or an accented file name loses its tail.
 func parseFrames(body string) (map[string]frame, error) {
 	if body == "" {
 		return nil, fmt.Errorf("empty response")
@@ -293,11 +334,11 @@ func parseFrames(body string) (map[string]frame, error) {
 			return nil, fmt.Errorf("malformed length: %w", err)
 		}
 		i += l + 1
-		if i+n > len(body) {
+		payload, rest, ok := utf16Split(body[i:], n)
+		if !ok {
 			return nil, fmt.Errorf("truncated payload")
 		}
-		payload := body[i : i+n]
-		i += n
+		i = len(body) - len(rest)
 		if len(payload) < 1 {
 			continue
 		}

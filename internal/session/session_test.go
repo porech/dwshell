@@ -1,6 +1,9 @@
 package session
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+)
 
 // resultFor decodes the frame for id from body (test helper mirroring Execute).
 func resultFor(t *testing.T, body, id string) ([]byte, error) {
@@ -67,5 +70,51 @@ func TestParseFramesBatch(t *testing.T) {
 func TestFrameMissing(t *testing.T) {
 	if _, err := (frame{}).result(false); err == nil {
 		t.Fatal("missing frame should error")
+	}
+}
+
+// The framed length counts characters, not bytes: the service is counting the
+// way JavaScript and Java do. Slicing the body by bytes truncates any payload
+// containing non-ASCII — a localized error message, an accented file name —
+// and leaves the caller with a payload cut mid-character.
+func TestParseFramesLengthCountsCharactersNotBytes(t *testing.T) {
+	payload := `K:{"message":"L'agente 'x' già esiste.","status":"error"}`
+	body := "K:K1:" + strconv.Itoa(len([]rune(payload))) + ":" + payload
+
+	frames, err := parseFrames(body)
+	if err != nil {
+		t.Fatalf("parseFrames: %v", err)
+	}
+	f, ok := frames["K1"]
+	if !ok {
+		t.Fatal("frame K1 missing")
+	}
+	data, err := f.result(true)
+	if err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	want := `{"message":"L'agente 'x' già esiste.","status":"error"}`
+	if string(data) != want {
+		t.Fatalf("payload truncated:\n got %q\nwant %q", data, want)
+	}
+}
+
+// Beyond the basic plane a character is two UTF-16 units, which is what the
+// service counts — counting Go runes there would trade one off-by-one for
+// another.
+func TestParseFramesCountsUTF16Units(t *testing.T) {
+	payload := `K:{"n":"😀"}` // the emoji is one rune but two UTF-16 units
+	body := "K:K1:" + strconv.Itoa(utf16Len(payload)) + ":" + payload
+
+	frames, err := parseFrames(body)
+	if err != nil {
+		t.Fatalf("parseFrames: %v", err)
+	}
+	data, err := frames["K1"].result(true)
+	if err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	if string(data) != `{"n":"😀"}` {
+		t.Fatalf("got %q", data)
 	}
 }
