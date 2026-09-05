@@ -321,6 +321,21 @@ A legacy binary framing exists (`_TMPnewConnMode==0`, length-prefixed frames,
 type byte `s`=string). The modern mode delivers **plain JSON text frames**, one
 message per frame.
 
+**One message must be one unfragmented frame.** The relay node closes the
+connection (`1005`, nothing reaching the agent) the moment a message arrives
+split across WebSocket continuation frames. The browser client never fragments —
+its socket layer hands each JSON message to `WebSocket.send()` whole — so this
+is easy to miss with a Go client, where `gorilla/websocket` fragments any
+message larger than its write buffer (4096 bytes by default). Verified on Linux
+and Windows agents: the failure threshold tracks the write buffer exactly.
+
+Message size has two further ceilings, both agent-side rather than protocol:
+a single message carrying much more than ~10 KB is unreliable (the browser
+client drops the connection there too), and pushing more than roughly 20 KB of
+input in an unpaced burst tears the terminal down — the agent writes input to
+the PTY while holding the lock its reader thread needs, so a full PTY buffer
+blocks the write, starves the reader, and trips its timeout.
+
 ### 5.4 Shell sub-protocol (JSON text frames)
 
 Client → server:

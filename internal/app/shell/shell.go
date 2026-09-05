@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/porech/dwshell/internal/session"
 )
@@ -22,6 +23,35 @@ const (
 	reqChangeSize   = 3
 	keepAlivePeriod = 30 * time.Second
 )
+
+// maxMessageBytes caps the size of a single client → server message.
+//
+// Two limits sit on this path. The relay node drops the connection outright
+// (close 1005, nothing reaches the agent) when a message arrives split across
+// WebSocket continuation frames, and gorilla splits any message larger than the
+// socket's write buffer — hence session.socketWriteBuffer, which this must stay
+// under. Beyond that the agent itself becomes unreliable once a single message
+// carries much more than ~10 KB in one write to the PTY, and the browser client
+// loses the connection there too, so keep messages well below that as well.
+const maxMessageBytes = 8 * 1024
+
+// inputEnvelope is the JSON overhead of an input message around its data field:
+// {"data":"","id":<n>,"type":2}. Sized for a generous terminal id.
+const inputEnvelope = 40
+
+// maxInputBytes is the most raw terminal input one message carries. JSON blows
+// a byte up to six characters at worst — control keys, and < > & too — so
+// dividing the budget by six is the only bound that always holds; ordinary
+// typed input is nowhere near it and merely costs a few more messages.
+const maxInputBytes = (maxMessageBytes - inputEnvelope) / 6
+
+// chunkPause spaces out the messages of a split input. The agent writes input
+// to the PTY while holding the lock its reader needs, so a burst that outruns
+// the remote shell fills the PTY buffer, blocks that write, and gets the whole
+// terminal torn down (past roughly 20 KB in one go). Pausing between chunks
+// leaves the shell room to drain. Ordinary typing never reaches this path.
+// (var so tests can drop it.)
+var chunkPause = 20 * time.Millisecond
 
 // frameConn is the subset of a session socket the shell uses (satisfied by
 // *session.Socket; a fake is used in tests).
@@ -121,9 +151,37 @@ func (s *Shell) send(v any) error {
 	return s.sock.SendText(b)
 }
 
-// Input sends raw keystrokes to the terminal immediately (no batching).
+// Input sends raw keystrokes to the terminal immediately (no batching). Input
+// longer than one message can carry — a pasted block, or a long `-c` command —
+// goes out as several input messages, which the remote PTY sees as one stream
+// exactly as if it had been typed.
 func (s *Shell) Input(data string) error {
-	return s.send(map[string]any{"id": s.termID, "type": reqInput, "data": data})
+	for len(data) > 0 {
+		n := len(data)
+		if n > maxInputBytes {
+			n = runeBoundary(data, maxInputBytes)
+		}
+		if err := s.send(map[string]any{"id": s.termID, "type": reqInput, "data": data[:n]}); err != nil {
+			return err
+		}
+		data = data[n:]
+		if len(data) > 0 {
+			time.Sleep(chunkPause)
+		}
+	}
+	return nil
+}
+
+// runeBoundary walks n back to the start of a rune so a chunk never ends
+// mid-rune (which JSON encoding would turn into U+FFFD). Input that holds no
+// rune start at all is not text; it is cut at n rather than looping forever.
+func runeBoundary(data string, n int) int {
+	for i := n; i > 0; i-- {
+		if utf8.RuneStart(data[i]) {
+			return i
+		}
+	}
+	return n
 }
 
 // Resize notifies the remote PTY of a new size (triggers SIGWINCH).
