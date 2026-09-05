@@ -196,14 +196,7 @@ func cmdLogin(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	if user == "" {
-		// Re-logging in with no --user refreshes the default account.
-		user = c.Config().Default
-	}
-	if user == "" {
-		fmt.Fprint(os.Stderr, "User (email): ")
-		fmt.Scanln(&user)
-	}
+	user = loginUser(user, c.Config().Default, term.IsTTY(), promptUser)
 	if user == "" {
 		return fail("a user is required")
 	}
@@ -221,6 +214,41 @@ func cmdLogin(ctx context.Context, args []string) int {
 	}
 	fmt.Fprintln(os.Stderr, msg+" to "+c.Config().Path())
 	return 0
+}
+
+// loginUser decides which account `login` authenticates.
+//
+// The email is asked for whenever there is someone to ask, because it is the
+// account's identity: skipping the question when an account already exists
+// would make a bare `dwshell login` able only ever to refresh that one, never
+// to register a second. The account already configured is offered as the
+// answer, so refreshing it stays one keystroke.
+//
+// With no terminal — a script — there is nobody to ask, so the default account
+// is used, which is what such a script has always done.
+func loginUser(flagUser, defaultAccount string, interactive bool, prompt func(suggested string) string) string {
+	if flagUser != "" {
+		return flagUser
+	}
+	if !interactive {
+		return defaultAccount
+	}
+	if answer := strings.TrimSpace(prompt(defaultAccount)); answer != "" {
+		return answer
+	}
+	return defaultAccount
+}
+
+// promptUser asks for the account email, offering the one already configured.
+func promptUser(suggested string) string {
+	if suggested != "" {
+		fmt.Fprintf(os.Stderr, "User (email) [%s]: ", suggested)
+	} else {
+		fmt.Fprint(os.Stderr, "User (email): ")
+	}
+	var answer string
+	fmt.Scanln(&answer)
+	return answer
 }
 
 func readPassword() (string, error) {
