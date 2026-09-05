@@ -94,6 +94,7 @@ Usage:
   dwshell put [-r] <local> <agent>:<remote>   Upload a file or directory
   dwshell rm [-r] <agent>:<path> [<path>...]  Remove remote file(s)/dir(s)
   dwshell sync [-n] [--delete] [--checksum] <src> <dst>   One-way sync
+  dwshell agent create <name> [--group G] [--json]        Create an agent, print its install code
 
 Agent flags:
   -c string        Run command non-interactively, capture output, exit
@@ -155,6 +156,8 @@ func run() int {
 		return cmdRm(ctx, os.Args[2:])
 	case "sync":
 		return cmdSync(ctx, os.Args[2:])
+	case "agent":
+		return cmdAgentManage(ctx, os.Args[2:])
 	case "shell":
 		// Explicit form: the next argument is always an agent, even if it happens
 		// to be named like a subcommand (e.g. `dwshell shell version`).
