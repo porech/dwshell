@@ -30,7 +30,7 @@ func newFlags(name string) *flag.FlagSet {
 }
 
 // valueFlags are agent-command flags that consume a following value token.
-var valueFlags = map[string]bool{"c": true, "term": true, "config": true, "timeout": true}
+var valueFlags = map[string]bool{"c": true, "term": true, "config": true, "timeout": true, "account": true, "description": true, "group": true}
 
 // extractAgent pulls the first positional (the agent) out of args, returning it
 // plus the remaining flag arguments in order. It skips the value token that
@@ -83,7 +83,8 @@ const usage = `dwshell — remote shell over DWService
 
 Usage:
   dwshell login [--user U] [--no-trusted]     Authenticate and persist the session
-  dwshell logout                              Forget stored credentials
+  dwshell logout [--all]                      Forget stored credentials
+  dwshell account list|default|rm             Manage accounts (only if you log in with several)
   dwshell list [--json]                       List machines (agents + shares)
   dwshell <agent> [flags]                     Open an interactive shell
   dwshell <agent> -c "command" [flags]        Run a command and exit
@@ -107,6 +108,7 @@ Agent flags:
 
 Global:
   --config path    Config file (default: XDG/AppData location)
+  --account email  Account to use when several are logged in (or DWSHELL_ACCOUNT)
   --version        Print version and exit
 
 Remote paths:
@@ -143,6 +145,8 @@ func run() int {
 		return 0
 	case "login":
 		return cmdLogin(ctx, os.Args[2:])
+	case "account":
+		return cmdAccount(ctx, os.Args[2:])
 	case "logout":
 		return cmdLogout(ctx, os.Args[2:])
 	case "list":
@@ -181,19 +185,25 @@ func cmdLogin(ctx context.Context, args []string) int {
 	var user, configPath string
 	noTrusted := false
 	fs := newFlags("login")
+	var account string
 	fs.StringVar(&user, "user", "", "account user (email)")
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&noTrusted, "no-trusted", false, "do not register a trusted device")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	c, err := client.New(configPath)
+	if account != "" {
+		return fail("--account does not apply to login: which account it touches is decided by the email you log in with")
+	}
+	c, err := client.NewForLogin(configPath)
 	if err != nil {
 		return fail("%v", err)
 	}
 	if user == "" {
-		user = c.Config().User
+		// Re-logging in with no --user refreshes the default account.
+		user = c.Config().Default
 	}
 	if user == "" {
 		fmt.Fprint(os.Stderr, "User (email): ")
@@ -238,12 +248,29 @@ func readPassword() (string, error) {
 
 func cmdLogout(ctx context.Context, args []string) int {
 	var configPath string
+	all := false
 	fs := newFlags("logout")
+	var account string
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
+	fs.BoolVar(&all, "all", false, "forget every account")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	c, err := client.New(configPath)
+	if all {
+		// --all must work even when several accounts are configured with no
+		// default, which is precisely a state someone might want to clear.
+		c, err := client.NewForLogin(configPath)
+		if err != nil {
+			return fail("%v", err)
+		}
+		if err := c.LogoutAll(ctx); err != nil {
+			return fail("%v", err)
+		}
+		fmt.Fprintln(os.Stderr, "logged out of every account")
+		return 0
+	}
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -260,12 +287,14 @@ func cmdList(ctx context.Context, args []string) int {
 	var configPath string
 	asJSON := false
 	fs := newFlags("list")
+	var account string
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&asJSON, "json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -307,9 +336,11 @@ func cmdAgent(ctx context.Context, args []string) int {
 	var own, shared, noTerm bool
 	var timeout time.Duration
 	fs := newFlags("agent")
+	var account string
 	fs.StringVar(&command, "c", "", "run command and exit")
 	fs.StringVar(&termValue, "term", "", "TERM for *nix remote")
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 	fs.BoolVar(&noTerm, "no-term", false, "do not send TERM")
@@ -334,7 +365,7 @@ func cmdAgent(ctx context.Context, args []string) int {
 		filter = remote.SharedOnly
 	}
 
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}

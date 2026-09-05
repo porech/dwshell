@@ -99,7 +99,9 @@ func cmdLs(ctx context.Context, args []string) int {
 	var configPath string
 	var own, shared bool
 	fs := newFlags("ls")
+	var account string
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 
@@ -123,7 +125,7 @@ func cmdLs(ctx context.Context, args []string) int {
 		return fail("%v", err)
 	}
 
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -162,7 +164,9 @@ func cmdGet(ctx context.Context, args []string) int {
 	var configPath string
 	var own, shared, recursive bool
 	fs := newFlags("get")
+	var account string
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 	fs.BoolVar(&recursive, "r", false, "download a directory recursively")
@@ -187,7 +191,7 @@ func cmdGet(ctx context.Context, args []string) int {
 		return fail("%v", err)
 	}
 
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -238,7 +242,9 @@ func cmdSync(ctx context.Context, args []string) int {
 	var configPath string
 	var own, shared, sizeOnly, dryRun, del, checksum bool
 	fs := newFlags("sync")
+	var account string
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 	fs.BoolVar(&sizeOnly, "size-only", false, "compare by size only (ignore mtime)")
@@ -275,7 +281,7 @@ func cmdSync(ctx context.Context, args []string) int {
 		return fail("%v", err)
 	}
 
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -421,7 +427,9 @@ func cmdRm(ctx context.Context, args []string) int {
 	var configPath string
 	var own, shared, recursive bool
 	fs := newFlags("rm")
+	var account string
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 	fs.BoolVar(&recursive, "r", false, "remove directories recursively")
@@ -454,7 +462,7 @@ func cmdRm(ctx context.Context, args []string) int {
 		return fail("%v", err)
 	}
 
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -514,7 +522,9 @@ func cmdPut(ctx context.Context, args []string) int {
 	var configPath string
 	var own, shared, recursive bool
 	fs := newFlags("put")
+	var account string
 	fs.StringVar(&configPath, "config", "", "config path")
+	fs.StringVar(&account, "account", "", "account to use when several are logged in")
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 	fs.BoolVar(&recursive, "r", false, "upload a directory recursively")
@@ -536,7 +546,7 @@ func cmdPut(ctx context.Context, args []string) int {
 		return fail("%v", err)
 	}
 
-	c, err := client.New(configPath)
+	c, err := client.New(configPath, account)
 	if err != nil {
 		return fail("%v", err)
 	}
