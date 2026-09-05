@@ -29,14 +29,14 @@ func newFlags(name string) *flag.FlagSet {
 	return fs
 }
 
-// valueFlags are host-command flags that consume a following value token.
+// valueFlags are agent-command flags that consume a following value token.
 var valueFlags = map[string]bool{"c": true, "term": true, "config": true, "timeout": true}
 
-// extractHost pulls the first positional (the host) out of args, returning it
+// extractAgent pulls the first positional (the agent) out of args, returning it
 // plus the remaining flag arguments in order. It skips the value token that
 // follows a value flag so `dwshell GHE -c "ls"` and `dwshell -c "ls" GHE` both
 // work.
-func extractHost(args []string) (host string, flagArgs []string) {
+func extractAgent(args []string) (agent string, flagArgs []string) {
 	i := 0
 	for i < len(args) {
 		a := args[i]
@@ -51,9 +51,9 @@ func extractHost(args []string) (host string, flagArgs []string) {
 			i++
 			continue
 		}
-		host = a
+		agent = a
 		flagArgs = append(flagArgs, args[i+1:]...)
-		return host, flagArgs
+		return agent, flagArgs
 	}
 	return "", flagArgs
 }
@@ -85,20 +85,20 @@ Usage:
   dwshell login [--user U] [--no-trusted]     Authenticate and persist the session
   dwshell logout                              Forget stored credentials
   dwshell list [--json]                       List machines (agents + shares)
-  dwshell <host> [flags]                      Open an interactive shell
-  dwshell <host> -c "command" [flags]         Run a command and exit
-  dwshell shell <host> [flags]                Explicit form (use if <host> is
+  dwshell <agent> [flags]                     Open an interactive shell
+  dwshell <agent> -c "command" [flags]        Run a command and exit
+  dwshell shell <agent> [flags]               Explicit form (use if <agent> is
                                               named like a subcommand)
-  dwshell ls <host>[:<path>]                  List a remote directory (root if omitted)
-  dwshell get [-r] <host>:<remote> [local]     Download a file or directory
-  dwshell put [-r] <local> <host>:<remote>     Upload a file or directory
-  dwshell rm [-r] <host>:<path> [<path>...]     Remove remote file(s)/dir(s)
+  dwshell ls <agent>[:<path>]                 List a remote directory (root if omitted)
+  dwshell get [-r] <agent>:<remote> [local]   Download a file or directory
+  dwshell put [-r] <local> <agent>:<remote>   Upload a file or directory
+  dwshell rm [-r] <agent>:<path> [<path>...]  Remove remote file(s)/dir(s)
   dwshell sync [-n] [--delete] [--checksum] <src> <dst>   One-way sync
 
-Host flags:
+Agent flags:
   -c string        Run command non-interactively, capture output, exit
-  --own            Resolve <host> among owned agents only
-  --shared         Resolve <host> among incoming shares only
+  --own            Resolve <agent> among owned agents only
+  --shared         Resolve <agent> among incoming shares only
   --term string    TERM to send to a *nix remote (default: local $TERM)
   --no-term        Do not send a TERM to the remote
   --timeout dur    Command timeout for -c (default: none)
@@ -113,11 +113,11 @@ Remote paths:
   "/C:/dir" or "C:/dir" ('/' and '\' are interchangeable). If the path is omitted,
   the root is used.
 
-Host name vs subcommand:
-  "dwshell <host>" is a shortcut: the first argument is treated as a host unless
+Agent name vs subcommand:
+  "dwshell <agent>" is a shortcut: the first argument is treated as an agent unless
   it is one of the subcommands listed above. If a machine is actually named like
-  one of those, use the explicit form "dwshell shell <host>", which always treats
-  the argument as a host (e.g. "dwshell shell version" → host named "version").
+  one of those, use the explicit form "dwshell shell <agent>", which always treats
+  the argument as an agent (e.g. "dwshell shell version" → agent named "version").
 `
 
 func main() {
@@ -156,13 +156,13 @@ func run() int {
 	case "sync":
 		return cmdSync(ctx, os.Args[2:])
 	case "shell":
-		// Explicit form: the next argument is always a host, even if it happens
+		// Explicit form: the next argument is always an agent, even if it happens
 		// to be named like a subcommand (e.g. `dwshell shell version`).
-		return cmdHost(ctx, os.Args[2:])
+		return cmdAgent(ctx, os.Args[2:])
 	default:
-		// Shortcut form: `dwshell <host> [flags]`. If your host is named like a
-		// subcommand, use the explicit `dwshell shell <host>` form above.
-		return cmdHost(ctx, os.Args[1:])
+		// Shortcut form: `dwshell <agent> [flags]`. If your agent is named like a
+		// subcommand, use the explicit `dwshell shell <agent>` form above.
+		return cmdAgent(ctx, os.Args[1:])
 	}
 }
 
@@ -289,14 +289,14 @@ func cmdList(ctx context.Context, args []string) int {
 	return 0
 }
 
-// --- host (interactive / -c) ---
+// --- agent (interactive / -c) ---
 
-func cmdHost(ctx context.Context, args []string) int {
-	// args[0] is the host; flags may precede or follow it.
+func cmdAgent(ctx context.Context, args []string) int {
+	// args[0] is the agent; flags may precede or follow it.
 	var command, termValue, configPath string
 	var own, shared, noTerm bool
 	var timeout time.Duration
-	fs := newFlags("host")
+	fs := newFlags("agent")
 	fs.StringVar(&command, "c", "", "run command and exit")
 	fs.StringVar(&termValue, "term", "", "TERM for *nix remote")
 	fs.StringVar(&configPath, "config", "", "config path")
@@ -305,14 +305,14 @@ func cmdHost(ctx context.Context, args []string) int {
 	fs.BoolVar(&noTerm, "no-term", false, "do not send TERM")
 	fs.DurationVar(&timeout, "timeout", 0, "command timeout for -c (0 = no timeout)")
 
-	hostArg, rest := extractHost(args)
-	if hostArg == "" {
-		return fail("a host is required (see `dwshell --help`)")
+	agentArg, rest := extractAgent(args)
+	if agentArg == "" {
+		return fail("an agent is required (see `dwshell --help`)")
 	}
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
-	username, host, userExplicit := parseUserHost(hostArg)
+	username, agent, userExplicit := parseUserAndAgent(agentArg)
 
 	filter := remote.Any
 	switch {
@@ -328,13 +328,13 @@ func cmdHost(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	m, sess, err := c.Connect(ctx, host, filter)
+	m, sess, err := c.Connect(ctx, agent, filter)
 	if err != nil {
 		return fail("%v", err)
 	}
 
 	if command != "" {
-		res, err := shell.Run(ctx, sess, m.OS, command, timeout, username, nonInteractivePassword(username, host))
+		res, err := shell.Run(ctx, sess, m.OS, command, timeout, username, nonInteractivePassword(username, agent))
 		if err != nil {
 			return fail("%v", err)
 		}
@@ -351,17 +351,17 @@ func cmdHost(ctx context.Context, args []string) int {
 	return interactive(ctx, sess, m, username, userExplicit, termValue, noTerm)
 }
 
-// parseUserHost splits "user@host" into (user, host, explicit); when no user is
+// parseUserAndAgent splits "user@agent" into (user, agent, explicit); when no user is
 // given the local username is used, SSH-style, and explicit is false.
-func parseUserHost(arg string) (user, host string, explicit bool) {
+func parseUserAndAgent(arg string) (user, agent string, explicit bool) {
 	if i := strings.LastIndexByte(arg, '@'); i >= 0 {
 		return arg[:i], arg[i+1:], true
 	}
 	return localUser(), arg, false
 }
 
-func warnUserIgnored(username, host string) {
-	fmt.Fprintf(os.Stderr, "dwshell: note: %s does not require authentication; the user %q is ignored (shell runs as the agent's user)\n", host, username)
+func warnUserIgnored(username, agent string) {
+	fmt.Fprintf(os.Stderr, "dwshell: note: %s does not require authentication; the user %q is ignored (shell runs as the agent's user)\n", agent, username)
 }
 
 func localUser() string {
@@ -375,15 +375,15 @@ func localUser() string {
 }
 
 // interactivePassword prompts on the TTY (agent asked for a password).
-func interactivePassword(user, host string) shell.PasswordFunc {
+func interactivePassword(user, agent string) shell.PasswordFunc {
 	return func(u string, retry bool) (string, error) {
 		if p := os.Getenv("DWSHELL_REMOTE_PASSWORD"); p != "" && !retry {
 			return p, nil
 		}
 		if !xterm.IsTerminal(int(os.Stdin.Fd())) {
-			return "", fmt.Errorf("agent requires a password for %s@%s; set DWSHELL_REMOTE_PASSWORD", u, host)
+			return "", fmt.Errorf("agent requires a password for %s@%s; set DWSHELL_REMOTE_PASSWORD", u, agent)
 		}
-		label := fmt.Sprintf("%s@%s's password: ", u, host)
+		label := fmt.Sprintf("%s@%s's password: ", u, agent)
 		if retry {
 			label = "Sorry, try again.\n" + label
 		}
@@ -396,12 +396,12 @@ func interactivePassword(user, host string) shell.PasswordFunc {
 
 // nonInteractivePassword supplies the remote password for -c from the
 // environment (or a flag); it never prompts.
-func nonInteractivePassword(user, host string) shell.PasswordFunc {
+func nonInteractivePassword(user, agent string) shell.PasswordFunc {
 	return func(u string, retry bool) (string, error) {
 		if p := os.Getenv("DWSHELL_REMOTE_PASSWORD"); p != "" && !retry {
 			return p, nil
 		}
-		return "", fmt.Errorf("agent requires a password for %s@%s; set DWSHELL_REMOTE_PASSWORD", u, host)
+		return "", fmt.Errorf("agent requires a password for %s@%s; set DWSHELL_REMOTE_PASSWORD", u, agent)
 	}
 }
 
