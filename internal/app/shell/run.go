@@ -38,6 +38,29 @@ func wrapCommand(cmd string, os remote.OS) string {
 	return fmt.Sprintf("echo __DWSH_BEGIN__; ( %s ); echo __DWSH_RC_$?_END__\r", cmd)
 }
 
+// truncationHintLength is the point past which a remote shell could have
+// truncated the command line. The lowest limit measured is a shell reading in
+// canonical mode, cut by the tty at 4094 characters; below that no remote is
+// known to truncate, so the hint could only mislead.
+const truncationHintLength = 4000
+
+// timeoutErr explains a timeout, adding what a truncated command line looks
+// like when the line was long enough for that to be possible — past its limit a
+// remote shell cuts the line silently and the exit-code marker goes with it, so
+// the wait can never end.
+//
+// It stays a possibility, never a diagnosis: a command that is simply still
+// running looks exactly the same from here. Seeing the BEGIN marker only rules
+// out the case where nothing ran at all, not the slow one.
+func timeoutErr(out []byte, lineLen int) error {
+	if lineLen > truncationHintLength && reBegin.Match(out) {
+		return fmt.Errorf("timed out waiting for command to finish; the command line was %d characters, "+
+			"and past a limit of its own the remote shell truncates the line silently, losing the exit-code "+
+			"marker — if that is what happened here, upload it with `dwshell put` and run it by path", lineLen)
+	}
+	return fmt.Errorf("timed out waiting for command to finish")
+}
+
 // Run executes a single command non-interactively and returns its output and
 // exit code. It opens a fresh shell, sends the wrapped command, and reads until
 // the RC sentinel (or ctx/timeout fires).
@@ -54,7 +77,8 @@ func Run(ctx context.Context, sess *session.Session, os remote.OS, command strin
 		return nil, err
 	}
 
-	if err := sh.Input(wrapCommand(command, os)); err != nil {
+	wrapped := wrapCommand(command, os)
+	if err := sh.Input(wrapped); err != nil {
 		return nil, err
 	}
 
@@ -74,7 +98,8 @@ func Run(ctx context.Context, sess *session.Session, os remote.OS, command strin
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-timeoutCh:
-			return nil, fmt.Errorf("timed out waiting for command to finish")
+			// The line as typed, minus the Enter that submits it.
+			return nil, timeoutErr(buf.Bytes(), len(wrapped)-1)
 		case chunk, ok := <-sh.Output():
 			if !ok {
 				if sh.Err() != nil {
