@@ -16,20 +16,20 @@ import (
 	"github.com/porech/dwshell/internal/session"
 )
 
-// parseRemote splits a "host:path" endpoint. It splits on the first colon so
-// remote Windows paths (host:C:\dir) work; the host must be non-empty. An empty
+// parseRemote splits an "agent:path" endpoint. It splits on the first colon so
+// remote Windows paths (agent:C:\dir) work; the agent must be non-empty. An empty
 // path is allowed and means the remote root (see canonicalRemotePath).
-func parseRemote(s string) (host, rpath string, err error) {
+func parseRemote(s string) (agent, rpath string, err error) {
 	i := strings.IndexByte(s, ':')
 	if i <= 0 {
-		return "", "", fmt.Errorf("expected host:path, got %q", s)
+		return "", "", fmt.Errorf("expected agent:path, got %q", s)
 	}
 	return s[:i], s[i+1:], nil
 }
 
-// isRemoteEndpoint reports whether s looks like a "host:path" remote endpoint
-// rather than a local path. A single-letter host followed by a separator is
-// treated as a local Windows drive (C:\dir), not a remote host.
+// isRemoteEndpoint reports whether s looks like an "agent:path" remote endpoint
+// rather than a local path. A single-letter agent followed by a separator is
+// treated as a local Windows drive (C:\dir), not a remote agent.
 func isRemoteEndpoint(s string) bool {
 	i := strings.IndexByte(s, ':')
 	if i <= 0 {
@@ -103,18 +103,18 @@ func cmdLs(ctx context.Context, args []string) int {
 	fs.BoolVar(&own, "own", false, "owned agents only")
 	fs.BoolVar(&shared, "shared", false, "incoming shares only")
 
-	endpoint, rest := extractHost(args)
+	endpoint, rest := extractAgent(args)
 	if endpoint == "" {
-		return fail("usage: dwshell ls <host>[:<path>]")
+		return fail("usage: dwshell ls <agent>[:<path>]")
 	}
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
-	// The path is optional: "dwshell ls <host>" (or "<host>:") lists the root.
-	host, rpath := endpoint, ""
+	// The path is optional: "dwshell ls <agent>" (or "<agent>:") lists the root.
+	agent, rpath := endpoint, ""
 	if strings.ContainsRune(endpoint, ':') {
 		var err error
-		if host, rpath, err = parseRemote(endpoint); err != nil {
+		if agent, rpath, err = parseRemote(endpoint); err != nil {
 			return fail("%v", err)
 		}
 	}
@@ -127,7 +127,7 @@ func cmdLs(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	m, sess, err := c.ConnectApp(ctx, agent, filter, "filesystem")
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -172,9 +172,9 @@ func cmdGet(ctx context.Context, args []string) int {
 		return 2
 	}
 	if len(pos) < 1 || len(pos) > 2 {
-		return fail("usage: dwshell get <host>:<remote> [local]")
+		return fail("usage: dwshell get <agent>:<remote> [local]")
 	}
-	host, rpath, err := parseRemote(pos[0])
+	agent, rpath, err := parseRemote(pos[0])
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -191,7 +191,7 @@ func cmdGet(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	m, sess, err := c.ConnectApp(ctx, agent, filter, "filesystem")
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -251,12 +251,12 @@ func cmdSync(ctx context.Context, args []string) int {
 		return 2
 	}
 	if len(pos) != 2 {
-		return fail("usage: dwshell sync <src> <dst>  (exactly one of src/dst is host:path)")
+		return fail("usage: dwshell sync <src> <dst>  (exactly one of src/dst is agent:path)")
 	}
 	src, dst := pos[0], pos[1]
 	srcR, dstR := isRemoteEndpoint(src), isRemoteEndpoint(dst)
 	if srcR == dstR {
-		return fail("exactly one of source and destination must be a host:path endpoint")
+		return fail("exactly one of source and destination must be an agent:path endpoint")
 	}
 
 	var dir files.Direction
@@ -266,7 +266,7 @@ func cmdSync(ctx context.Context, args []string) int {
 	} else {
 		dir, endpoint, localRoot = files.Upload, dst, src
 	}
-	host, rpath, err := parseRemote(endpoint)
+	agent, rpath, err := parseRemote(endpoint)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -279,7 +279,7 @@ func cmdSync(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	m, sess, err := c.ConnectApp(ctx, agent, filter, "filesystem")
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -305,7 +305,7 @@ func cmdSync(ctx context.Context, args []string) int {
 	}
 	if dir == files.Upload && !sizeOnly && !checksum {
 		if m.OS.IsUnix() {
-			cfg.SetRemoteMTimes = remoteMTimeSetter(sess, m, host)
+			cfg.SetRemoteMTimes = remoteMTimeSetter(sess, m, agent)
 		} else {
 			fmt.Fprintln(os.Stderr, "note: cannot set mtimes on a Windows remote; comparing by size only")
 		}
@@ -335,7 +335,7 @@ func cmdSync(ctx context.Context, args []string) int {
 // remoteMTimeSetter returns a function that sets mtimes on *nix remote files via
 // the shell (the filesystem app has no set-mtime command). Failures are warned
 // and swallowed (best-effort), so the sync still succeeds.
-func remoteMTimeSetter(sess *session.Session, m *remote.Machine, host string) func(context.Context, map[string]time.Time) error {
+func remoteMTimeSetter(sess *session.Session, m *remote.Machine, agent string) func(context.Context, map[string]time.Time) error {
 	return func(ctx context.Context, times map[string]time.Time) error {
 		var b strings.Builder
 		flush := func() error {
@@ -431,21 +431,21 @@ func cmdRm(ctx context.Context, args []string) int {
 		return 2
 	}
 	if len(pos) < 1 {
-		return fail("usage: dwshell rm <host>:<path> [<host>:<path>...]")
+		return fail("usage: dwshell rm <agent>:<path> [<agent>:<path>...]")
 	}
 
-	// All targets must be on the same host.
-	var host string
+	// All targets must be on the same agent.
+	var agent string
 	var rpaths []string
 	for _, p := range pos {
 		h, rp, err := parseRemote(p)
 		if err != nil {
 			return fail("%v", err)
 		}
-		if host == "" {
-			host = h
-		} else if h != host {
-			return fail("all paths must be on the same host (%q vs %q)", host, h)
+		if agent == "" {
+			agent = h
+		} else if h != agent {
+			return fail("all paths must be on the same agent (%q vs %q)", agent, h)
 		}
 		rpaths = append(rpaths, rp)
 	}
@@ -458,7 +458,7 @@ func cmdRm(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	m, sess, err := c.ConnectApp(ctx, agent, filter, "filesystem")
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -474,7 +474,7 @@ func cmdRm(ctx context.Context, args []string) int {
 				rc = fail("%v", err)
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "removed %s:%s (recursively)\n", host, rp)
+			fmt.Fprintf(os.Stderr, "removed %s:%s (recursively)\n", agent, rp)
 		}
 		return rc
 	}
@@ -502,7 +502,7 @@ func cmdRm(ctx context.Context, args []string) int {
 	}
 	for _, dir := range order {
 		for _, n := range byDir[dir] {
-			fmt.Fprintf(os.Stderr, "removed %s:%s%s\n", host, dir, n)
+			fmt.Fprintf(os.Stderr, "removed %s:%s%s\n", agent, dir, n)
 		}
 	}
 	return 0
@@ -524,10 +524,10 @@ func cmdPut(ctx context.Context, args []string) int {
 		return 2
 	}
 	if len(pos) != 2 {
-		return fail("usage: dwshell put <local> <host>:<remote>")
+		return fail("usage: dwshell put <local> <agent>:<remote>")
 	}
 	local := pos[0]
-	host, rpath, err := parseRemote(pos[1])
+	agent, rpath, err := parseRemote(pos[1])
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -540,7 +540,7 @@ func cmdPut(ctx context.Context, args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
-	m, sess, err := c.ConnectApp(ctx, host, filter, "filesystem")
+	m, sess, err := c.ConnectApp(ctx, agent, filter, "filesystem")
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -557,7 +557,7 @@ func cmdPut(ctx context.Context, args []string) int {
 		if err != nil {
 			return fail("%v", err)
 		}
-		fmt.Fprintf(os.Stderr, "uploaded %d files (%d bytes) → %s:%s\n", count, total, host, rpath)
+		fmt.Fprintf(os.Stderr, "uploaded %d files (%d bytes) → %s:%s\n", count, total, agent, rpath)
 		return 0
 	}
 
@@ -576,7 +576,7 @@ func cmdPut(ctx context.Context, args []string) int {
 	if n >= 0 {
 		sz = fmt.Sprintf("%d bytes", n)
 	}
-	fmt.Fprintf(os.Stderr, "uploaded %s (%s) → %s:%s\n", local, sz, host, rpath)
+	fmt.Fprintf(os.Stderr, "uploaded %s (%s) → %s:%s\n", local, sz, agent, rpath)
 	return 0
 }
 

@@ -42,9 +42,9 @@ The DWService `filesystem` app runs over the same agent session as the shell
 
 New package `internal/app/files` builds on these.
 
-CLI, phase 1 (single files): `dwshell ls <host>:<path>`,
-`dwshell get <host>:<remote> [local]`, `dwshell put <local> <host>:<remote>`.
-`host:path` endpoints; `--own`/`--shared` and agent-auth as for the shell.
+CLI, phase 1 (single files): `dwshell ls <agent>:<path>`,
+`dwshell get <agent>:<remote> [local]`, `dwshell put <local> <agent>:<remote>`.
+`agent:path` endpoints; `--own`/`--shared` and agent-auth as for the shell.
 
 Phase 2, recursive + sync (rsync-style). Design decisions (recorded now):
 
@@ -107,7 +107,7 @@ shell on an owned agent and runs `-c`.
    - If a trusted-device token exists: passwordless `type=device` login.
    - Else: `user` then `password` step; on success register a trusted device
      (unless `--no-trusted`) and store its token.
-2. **Resolve host** → list agents + shares, match by name or id (see below),
+2. **Resolve agent** → list agents + shares, match by name or id (see below),
    confirm it is online (`state==N`) and supports `shell`.
 3. **Connect** → `agent|share connection` with a fresh signing key → agent
    session command URL.
@@ -133,7 +133,7 @@ Two credential tiers are persisted in the config (mode 0600):
   `dwshell login` registers **one** and reuses it; it is never re-registered
   while a stored one exists.
 
-Control-command resolution (`list`, `<host>`, `-c`):
+Control-command resolution (`list`, `<agent>`, `-c`):
 
 1. Stored session still valid → use it.
 2. Expired but a trusted device exists → silently re-login via device, refresh
@@ -150,11 +150,11 @@ still cached and reused, so re-auth is infrequent, not per-command.
 dwshell login [--user U] [--no-trusted]      # authenticate, persist session (+device)
 dwshell logout                               # forget local creds; deregister the device
 dwshell list [--json]                        # list agents + shares
-dwshell [flags] <host>                       # interactive shell
-dwshell [flags] <host> -c "command"          # run command, capture, exit
+dwshell [flags] <agent>                       # interactive shell
+dwshell [flags] <agent> -c "command"          # run command, capture, exit
 ```
 
-- `<host>`: agent/share **name** or **id**. If a name is ambiguous (collision
+- `<agent>`: agent/share **name** or **id**. If a name is ambiguous (collision
   between owned/shared, or duplicate share ids), require the id or
   `--own`/`--shared`.
 - Global flags: `--term <value>`, `--no-term`, `--config <path>`, `--json`,
@@ -186,7 +186,7 @@ Agents may require an OS login for the shell (`shell.enable_authentication`),
 which the agent renders as an in-terminal `User:`/`Password:` prompt (see
 `PROTOCOL.md` §5.5). `dwshell` drives it automatically:
 
-- The host may be `user@host`; with no `user@`, the **local username** is used
+- The agent may be `user@agent`; with no `user@`, the **local username** is used
   (like SSH).
 - The username is sent automatically; the password is requested **only when the
   agent asks** — a TTY prompt interactively, or `DWSHELL_REMOTE_PASSWORD` for

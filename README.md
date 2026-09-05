@@ -144,7 +144,7 @@ $ dwshell myserver -c "uname -sr"
 Linux 6.8.0
 ```
 
-After `login`, control commands (`list`, `<host>`, `-c`) reuse the saved session
+After `login`, control commands (`list`, `<agent>`, `-c`) reuse the saved session
 and **never prompt** for the account password. When the session expires they
 refresh silently via the trusted device, or, if there is none, tell you to run
 `dwshell login` again. Leave an interactive shell with `exit` (or Ctrl-D).
@@ -162,21 +162,21 @@ the session without any of this. To supply a code non-interactively, see
 | `dwshell login [--user U] [--no-trusted]` | Authenticate and persist the session (and, by default, a trusted device). |
 | `dwshell logout` | Deregister the trusted device and forget local credentials. |
 | `dwshell list [--json]` | List machines with OS, online state, and owned/shared. |
-| `dwshell <host>` | Open an interactive shell. |
-| `dwshell <host> -c "cmd"` | Run a command non-interactively; exit code is propagated. |
-| `dwshell shell <host>` | Explicit form of the above. |
-| `dwshell ls <host>[:<path>]` | List a remote directory (root if the path is omitted). |
-| `dwshell get [-r] <host>:<remote> [local]` | Download a file (or directory with `-r`). |
-| `dwshell put [-r] <local> <host>:<remote>` | Upload a file (or directory with `-r`). |
-| `dwshell rm [-r] <host>:<path> [...]` | Remove remote file(s) (directories with `-r`). |
-| `dwshell sync [flags] <src> <dst>` | One-way sync (size+mtime or `--checksum`); one side is `host:path`. |
+| `dwshell <agent>` | Open an interactive shell. |
+| `dwshell <agent> -c "cmd"` | Run a command non-interactively; exit code is propagated. |
+| `dwshell shell <agent>` | Explicit form of the above. |
+| `dwshell ls <agent>[:<path>]` | List a remote directory (root if the path is omitted). |
+| `dwshell get [-r] <agent>:<remote> [local]` | Download a file (or directory with `-r`). |
+| `dwshell put [-r] <local> <agent>:<remote>` | Upload a file (or directory with `-r`). |
+| `dwshell rm [-r] <agent>:<path> [...]` | Remove remote file(s) (directories with `-r`). |
+| `dwshell sync [flags] <src> <dst>` | One-way sync (size+mtime or `--checksum`); one side is `agent:path`. |
 | `dwshell version` | Print the version and exit. |
 | `dwshell help` | Show usage. |
 
 #### File transfer
 
 `ls`, `get`, `put`, and `rm` operate on the DWService filesystem app. Remote endpoints
-are written `host:path` (the split is on the first colon, so a remote Windows
+are written `agent:path` (the split is on the first colon, so a remote Windows
 path like `GHE:C:\Users` works):
 
 ```sh
@@ -196,34 +196,34 @@ dwshell sync -n GHE:/data ./data        # dry-run download-sync
 
 Single-file transfers, recursive `get -r` / `put -r` / `rm -r`, and one-way
 `sync` (transfers only files that differ by size or mtime). `sync` takes exactly
-one `host:path` side; direction is inferred. It preserves mtimes (locally on
+one `agent:path` side; direction is inferred. It preserves mtimes (locally on
 download; on upload it sets the remote mtime via the shell — falling back to
 size-only when that is unavailable, e.g. on Windows remotes). `--size-only` compares by size only; `--checksum` compares by SHA-256 (hashing
 the remote via the shell); `--delete` removes destination entries missing from
 the source; `-n` is a dry run.
-`--own` / `--shared` disambiguate the host as elsewhere.
+`--own` / `--shared` disambiguate the agent as elsewhere.
 
 Remote paths are always rooted at `/`, so `GHE:/etc` and a relative `GHE:etc`
 address the same directory, and an omitted path means the root. On Windows `/` is
-the root and lists the drives; address a drive as `host:/C:/dir` or `host:C:/dir`
-(`/` and `\` are interchangeable, and a bare `host:C:` means the drive root).
+the root and lists the drives; address a drive as `agent:/C:/dir` or `agent:C:/dir`
+(`/` and `\` are interchangeable, and a bare `agent:C:` means the drive root).
 
-#### Host name vs subcommand
+#### Agent name vs subcommand
 
-`dwshell <host>` is a convenience shortcut: the first argument is treated as a
-host **unless** it exactly matches one of the subcommands in the
+`dwshell <agent>` is a convenience shortcut: the first argument is treated as an
+agent **unless** it exactly matches one of the subcommands in the
 [Commands](#commands) table above. So `dwshell version` prints the version, it
 does not connect to a machine.
 
 If you actually have a machine named like one of those, use the explicit `shell`
-subcommand, which always treats its argument as a host:
+subcommand, which always treats its argument as an agent:
 
 ```sh
-dwshell shell version      # connect to the host named "version"
-dwshell shell list -c "id" # run a command on the host named "list"
+dwshell shell version      # connect to the agent named "version"
+dwshell shell list -c "id" # run a command on the agent named "list"
 ```
 
-`<host>` is a machine **name** or **id**, optionally prefixed `user@` (SSH-style;
+`<agent>` is a machine **name** or **id**, optionally prefixed `user@` (SSH-style;
 defaults to your local username). If a name is ambiguous (a name shared between an
 owned agent and a share, or duplicate share names), pass the id or add `--own` /
 `--shared`. The `user@` part matters only when the agent requires authentication
@@ -240,8 +240,8 @@ never taken from the command line). Access-restricted users
 (`shell.users_allowed`) are enforced by the agent.
 
 ```sh
-dwshell alice@myhost              # log in as alice; prompts for her password if required
-DWSHELL_REMOTE_PASSWORD=… dwshell alice@myhost -c "id"
+dwshell alice@myserver              # log in as alice; prompts for her password if required
+DWSHELL_REMOTE_PASSWORD=… dwshell alice@myserver -c "id"
 ```
 
 ### Flags
@@ -255,7 +255,7 @@ DWSHELL_REMOTE_PASSWORD=… dwshell alice@myhost -c "id"
   remote truncates the line silently and runs what is left of it, and since the
   exit-code marker goes with it, `-c` waits for output that never arrives — so
   pass a bigger script with `dwshell put` and run it by path instead.
-- `--own` / `--shared` — resolve `<host>` among owned agents / incoming shares only.
+- `--own` / `--shared` — resolve `<agent>` among owned agents / incoming shares only.
 - `--term <value>` — TERM to send to a *nix remote (default: your local `$TERM`).
 - `--no-term` — do not send a TERM to the remote.
 - `--timeout <dur>` — command timeout for `-c` (default: none; e.g. `30s`, `5m`).
@@ -320,7 +320,7 @@ native UI all reuse the same login/session/connect libraries under `internal/`.
 ## Status
 
 Reverse-engineered and verified end-to-end against the live service on Linux and
-Windows remotes. Unit tests cover the crypto, request framing, and host
+Windows remotes. Unit tests cover the crypto, request framing, and agent
 resolution; `go test ./...`.
 
 ## Legal & disclaimer

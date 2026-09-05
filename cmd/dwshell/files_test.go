@@ -4,25 +4,25 @@ import "testing"
 
 func TestParseRemote(t *testing.T) {
 	tests := []struct {
-		in         string
-		host, path string
-		ok         bool
+		in          string
+		agent, path string
+		ok          bool
 	}{
 		{"GHE:/etc/hostname", "GHE", "/etc/hostname", true},
 		{"GHE:C:\\Users\\me", "GHE", "C:\\Users\\me", true}, // first colon splits; Windows remote path survives
 		{"myhost:/", "myhost", "/", true},
 		{"/local/path", "", "", false}, // no colon
-		{":/nohost", "", "", false},    // empty host
-		{"host:", "host", "", true},    // empty path means the remote root
+		{":/nohost", "", "", false},    // empty agent
+		{"agent:", "agent", "", true},  // empty path means the remote root
 	}
 	for _, tc := range tests {
-		host, p, err := parseRemote(tc.in)
+		agent, p, err := parseRemote(tc.in)
 		if tc.ok {
-			if err != nil || host != tc.host || p != tc.path {
-				t.Errorf("parseRemote(%q) = (%q,%q,%v), want (%q,%q,nil)", tc.in, host, p, err, tc.host, tc.path)
+			if err != nil || agent != tc.agent || p != tc.path {
+				t.Errorf("parseRemote(%q) = (%q,%q,%v), want (%q,%q,nil)", tc.in, agent, p, err, tc.agent, tc.path)
 			}
 		} else if err == nil {
-			t.Errorf("parseRemote(%q) expected error, got (%q,%q)", tc.in, host, p)
+			t.Errorf("parseRemote(%q) expected error, got (%q,%q)", tc.in, agent, p)
 		}
 	}
 }
@@ -74,13 +74,13 @@ func TestCanonicalRemotePath(t *testing.T) {
 
 func TestIsRemoteEndpoint(t *testing.T) {
 	cases := map[string]bool{
-		"GHE:/etc":      true,
-		"GHE:C:\\Users": true,
-		`C:\Users`:      false, // local Windows drive
-		"C:/Users":      false,
-		"/local/path":   false,
-		"./rel":         false,
-		"host:relative": true,
+		"GHE:/etc":       true,
+		"GHE:C:\\Users":  true,
+		`C:\Users`:       false, // local Windows drive
+		"C:/Users":       false,
+		"/local/path":    false,
+		"./rel":          false,
+		"agent:relative": true,
 	}
 	for in, want := range cases {
 		if got := isRemoteEndpoint(in); got != want {
