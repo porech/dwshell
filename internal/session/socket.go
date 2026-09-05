@@ -14,6 +14,14 @@ type Socket struct {
 	conn *websocket.Conn
 }
 
+// socketWriteBuffer sizes the WebSocket write buffer. gorilla splits any message
+// larger than this buffer across continuation frames, and the DWService relay
+// closes the connection (1005, nothing reaching the agent) as soon as it sees a
+// fragmented message — the browser client always sends one frame per message.
+// Apps keep their messages below this; the headroom is what stops a slightly
+// oversized one from silently turning into a dropped connection.
+const socketWriteBuffer = 32 * 1024
+
 // OpenSocket opens a WebSocket for the given app module over this session
 // (PROTOCOL.md §5.3). The relay host is the node prefixed with "s<slot>-".
 func (s *Session) OpenSocket(ctx context.Context, module string) (*Socket, error) {
@@ -39,6 +47,7 @@ func (s *Session) OpenSocket(ctx context.Context, module string) (*Socket, error
 	u.RawQuery = q.Encode()
 
 	dialer := *websocket.DefaultDialer
+	dialer.WriteBufferSize = socketWriteBuffer
 	dialer.Jar = s.client.Jar // carry the node's DWSID cookie into the handshake
 	conn, resp, err := dialer.DialContext(ctx, u.String(), nil)
 	if err != nil {
