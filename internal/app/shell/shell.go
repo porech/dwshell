@@ -17,11 +17,12 @@ import (
 
 // message type codes (client → server).
 const (
-	reqOpen         = 0
-	reqClose        = 1
-	reqInput        = 2
-	reqChangeSize   = 3
-	keepAlivePeriod = 30 * time.Second
+	reqOpen          = 0
+	reqClose         = 1
+	reqInput         = 2
+	reqChangeSize    = 3
+	keepAlivePeriod  = 30 * time.Second
+	closeGracePeriod = 2 * time.Second
 )
 
 // maxMessageBytes caps the size of a single client → server message.
@@ -193,9 +194,13 @@ func (s *Shell) Resize(cols, rows int) error {
 func (s *Shell) Close() error {
 	s.once.Do(func() {
 		close(s.done)
+		// Closing frames are best effort. A pending or stalled socket write must
+		// not prevent transport closure: closing the connection unblocks it.
+		abort := time.AfterFunc(closeGracePeriod, func() { _ = s.sock.Close() })
+		defer abort.Stop()
+		defer s.sock.Close()
 		_ = s.send(map[string]any{"id": s.termID, "type": reqClose})
 		_ = s.send(map[string]any{"type": "term"})
-		s.sock.Close()
 	})
 	return nil
 }
