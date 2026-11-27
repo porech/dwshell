@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 // LoginPageURL is the entry point served by DWService.
@@ -32,7 +33,8 @@ func (c *LoginConfig) AuthURL() string {
 
 // hexBlobRe matches the hex-encoded config blob passed to dwsInitDecodeHex() in
 // loadConfiguration(); it decodes to the JSON that seeds dwsConfig.
-var hexBlobRe = regexp.MustCompile(`dwsInitDecodeHex\('([0-9a-f]{200,})'\)`)
+var hexBlobRe = regexp.MustCompile(`dwsInitDecodeHex\(\s*((?:'[0-9a-f]+'|"[0-9a-f]+")(?:\s*\+\s*(?:'[0-9a-f]+'|"[0-9a-f]+"))*)\s*\)`)
+var hexPartRe = regexp.MustCompile(`['"]([0-9a-f]+)['"]`)
 
 type rawLoginConfig struct {
 	BaseURL              string `json:"baseUrl"`
@@ -67,7 +69,15 @@ func parseLoginConfig(html []byte) (*LoginConfig, error) {
 	if m == nil {
 		return nil, fmt.Errorf("login config blob not found on page")
 	}
-	raw, err := hex.DecodeString(string(m[1]))
+	// Accept only literal hex strings joined with '+', never evaluate JavaScript.
+	var encoded strings.Builder
+	for _, part := range hexPartRe.FindAllSubmatch(m[1], -1) {
+		encoded.Write(part[1])
+	}
+	if encoded.Len() < 200 {
+		return nil, fmt.Errorf("login config blob too short")
+	}
+	raw, err := hex.DecodeString(encoded.String())
 	if err != nil {
 		return nil, fmt.Errorf("decode config hex: %w", err)
 	}
