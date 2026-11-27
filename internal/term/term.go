@@ -80,6 +80,8 @@ const resizePoll = 250 * time.Millisecond
 // stdin reaches EOF. When stdin is a TTY it is switched to raw mode and restored
 // on return.
 func Bridge(ctx context.Context, r Remote) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // Stop resize polling on EOF, escape, and input errors too.
 	inFd := int(os.Stdin.Fd())
 	if xterm.IsTerminal(inFd) {
 		old, err := xterm.MakeRaw(inFd)
@@ -89,7 +91,7 @@ func Bridge(ctx context.Context, r Remote) error {
 	}
 
 	// stdin → remote input, with the SSH-style "~." disconnect escape.
-	quit := make(chan struct{})
+	quit := make(chan error, 1)
 	go func() {
 		buf := make([]byte, 4096)
 		esc := newEscapeScanner()
@@ -99,15 +101,21 @@ func Bridge(ctx context.Context, r Remote) error {
 				out, disc := esc.feed(buf[:n])
 				if len(out) > 0 {
 					if werr := r.Input(string(out)); werr != nil {
+						quit <- werr
 						return
 					}
 				}
 				if disc {
-					close(quit)
+					quit <- nil
 					return
 				}
 			}
 			if err != nil {
+				if errors.Is(err, io.EOF) {
+					quit <- nil
+				} else {
+					quit <- err
+				}
 				return
 			}
 		}
@@ -138,8 +146,8 @@ func Bridge(ctx context.Context, r Remote) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-quit: // user typed the "~." disconnect escape
-			return nil
+		case err := <-quit: // escape, stdin EOF, or input failure
+			return err
 		case chunk, ok := <-out:
 			if !ok {
 				return nil
